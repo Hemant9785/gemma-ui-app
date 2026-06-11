@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">PlannerV1</string>
+    <string name="accessibility_service_description">UIActionAgent uses accessibility gestures to execute approved research actions from the on-device model.</string>
+</resources>
