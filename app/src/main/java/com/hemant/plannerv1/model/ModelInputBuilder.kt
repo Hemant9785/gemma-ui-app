@@ -47,7 +47,10 @@ class ModelInputBuilder {
             }
         }
 
-            val prompt = """
+        val injection = com.hemant.plannerv1.AppContainer.promptInjectionManager.getChecklistForPackage(currentActivity)
+        val injectionStr = if (injection != null) "\n$injection" else ""
+
+        val prompt = """
                 You are UIActionAgent, an on-device Android UI agent.
                 Decide the next single action to make progress toward the user goal.
                 
@@ -60,11 +63,13 @@ class ModelInputBuilder {
                 - PRIORITY ORDER: open_app > type_text > click > scroll. Always prefer high-level commands over low-level visual clicks.
                 - HOME SCREEN RULE: If you are currently on the Home Screen/Launcher and the goal requires navigating to an app, ALWAYS use open_app (e.g. {"action": "open_app", "app_name": "YouTube"}). DO NOT try to click the app icon.
                 - FAILURE LOOP: If the previous step failed, DO NOT repeat it. Try an alternative approach.
+                - SEARCH RULE: If a search bar is directly visible, use type_text. If only a search icon (magnifying glass) is visible, use click on it first so the search bar appears.
+                - SEARCH RULE: if type_text in search is succesfull you have to choose one of the search results that is most relevant to user goal. if something is not relevant use scroll_down
                 - For click, output bounding_box [ymin, xmin, ymax, xmax] in 0-1000 scale. Center of the box will be clicked.
                 - For type_text, output bounding_box of the input field to focus, and the text to type.
                 - If a target is not visible, use scroll_up or scroll_down.
                 - If you are waiting for a page to load or an animation to finish, use wait.
-                - Use back if stuck. Use done when goal is completed.
+                - Use back if stuck. Use done when goal is completed.$injectionStr
 
                 Based on the screenshot and above context, what is the next action?
                 
@@ -77,6 +82,8 @@ class ModelInputBuilder {
         DbgLog.d(
             "Prompt built goalChars=${goal.length} step=$stepNumber/$maxSteps " +
                 "historySize=${history.records.size} promptChars=${prompt.length} " +
+                "promptInjectionEnabled=${com.hemant.plannerv1.AppContainer.promptInjectionManager.isEnabled} " +
+                "promptInjectionLength=${injectionStr.length} " +
                 "promptPreview=${DbgLog.preview(prompt)}",
         )
 

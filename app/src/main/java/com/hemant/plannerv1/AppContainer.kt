@@ -11,6 +11,7 @@ import com.hemant.plannerv1.model.ModelOutputParser
 import com.hemant.plannerv1.permissions.PermissionManager
 import com.hemant.plannerv1.safety.SafetyController
 import com.hemant.plannerv1.logging.DbgLog
+import com.hemant.plannerv1.model.PromptInjectionManager
 
 object AppContainer {
     lateinit var appContext: Context
@@ -33,6 +34,8 @@ object AppContainer {
         private set
     lateinit var agentOrchestrator: AgentOrchestrator
         private set
+    lateinit var promptInjectionManager: PromptInjectionManager
+        private set
 
     fun initialize(context: Context) {
         if (::appContext.isInitialized) {
@@ -50,6 +53,7 @@ object AppContainer {
         modelOutputParser = ModelOutputParser()
         safetyController = SafetyController()
         testLogger = TestLogger(appContext)
+        promptInjectionManager = PromptInjectionManager(appContext)
         agentOrchestrator = AgentOrchestrator(
             screenCaptureManager = screenCaptureManager,
             modelInputBuilder = modelInputBuilder,

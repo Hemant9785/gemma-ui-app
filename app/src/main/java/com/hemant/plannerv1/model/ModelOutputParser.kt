@@ -51,6 +51,7 @@ class ModelOutputParser {
                 "scroll_up" -> UiActionType.SCROLL_UP
                 "scroll_down" -> UiActionType.SCROLL_DOWN
                 "open_app" -> UiActionType.OPEN_APP
+                "wait" -> UiActionType.WAIT
                 "back" -> UiActionType.BACK
                 "done" -> UiActionType.DONE
                 else -> throw IllegalArgumentException("Unsupported action.")

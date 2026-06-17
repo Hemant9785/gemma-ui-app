@@ -256,6 +256,15 @@ private fun ControlScreen(
                     )
                 }
                 
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = com.hemant.plannerv1.AppContainer.promptInjectionManager.isEnabled,
+                        onCheckedChange = { com.hemant.plannerv1.AppContainer.promptInjectionManager.setEnabled(it) },
+                        colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.tertiary)
+                    )
+                    Text("Enable prompt injection", style = MaterialTheme.typography.bodyMedium)
+                }
+                
                 if (agentState.lastError != null) {
                     Surface(
                         color = MaterialTheme.colorScheme.errorContainer,

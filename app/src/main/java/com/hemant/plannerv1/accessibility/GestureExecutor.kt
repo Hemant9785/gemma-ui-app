@@ -192,12 +192,11 @@ class GestureExecutor(private val context: Context) {
             }
             
             if (success) {
-                DbgLog.d("typeText successful on attempt $i, submitting enter and dismissing keyboard", tag = "ACTION_DBG")
+                DbgLog.d("typeText successful on attempt $i, submitting enter", tag = "ACTION_DBG")
                 kotlinx.coroutines.delay(300)
                 if (android.os.Build.VERSION.SDK_INT >= 33) {
                     lastTargetNode?.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
                 }
-                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
                 return ExecutionResult(true, "typeText(${text.length} chars)")
             }
         }
