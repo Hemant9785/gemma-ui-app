@@ -113,7 +113,7 @@ class GemmaModelManager(private val context: Context) {
 
     @OptIn(ExperimentalApi::class)
     private suspend fun initializeEngine(modelFile: File) = withContext(Dispatchers.IO) {
-        ExperimentalFlags.enableSpeculativeDecoding = true
+        ExperimentalFlags.enableSpeculativeDecoding = false
         val cacheDir = File(context.cacheDir, "litertlm").apply { mkdirs() }
         DbgLog.i("Model engine init start path=${modelFile.absolutePath} bytes=${modelFile.length()}")
         val gpuError = runCatching {
@@ -123,7 +123,7 @@ class GemmaModelManager(private val context: Context) {
                 EngineConfig(
                     modelPath = modelFile.absolutePath,
                     backend = Backend.GPU(),
-                    visionBackend = Backend.GPU(),
+                    visionBackend = Backend.CPU(),
                     cacheDir = cacheDir.absolutePath,
                 ),
             )
@@ -134,7 +134,12 @@ class GemmaModelManager(private val context: Context) {
         }.exceptionOrNull()
 
         if (engine != null) return@withContext
-        gpuError?.let { DbgLog.w("Model engine init GPU failed: ${it.summary()}", it) }
+        gpuError?.let {
+            val trace = android.util.Log.getStackTraceString(it)
+            DbgLog.e("Model engine init GPU failed: ${it.summary()}\nFull Trace:\n$trace", tag = "MODEL_DBG")
+            DbgLog.e("Device Info: MAN=${android.os.Build.MANUFACTURER} MOD=${android.os.Build.MODEL} HW=${android.os.Build.HARDWARE} API=${android.os.Build.VERSION.SDK_INT}", tag = "MODEL_DBG")
+            DbgLog.w("Model engine init GPU failed: ${it.summary()}", it) 
+        }
 
         runCatching {
             _state.value = ModelState.InitializingCpu

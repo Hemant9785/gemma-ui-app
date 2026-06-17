@@ -50,25 +50,43 @@ class GestureExecutor(private val context: Context) {
 
     fun openApp(appName: String): ExecutionResult {
         val pm = context.packageManager
-        val packages = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
-        var targetPackage: String? = null
-        for (appInfo in packages) {
-            val label = pm.getApplicationLabel(appInfo).toString()
-            if (label.equals(appName, ignoreCase = true)) {
-                targetPackage = appInfo.packageName
-                break
+        val launcherIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
+            addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+        }
+        val activities = pm.queryIntentActivities(launcherIntent, 0)
+        
+        var bestScore = 0
+        var bestPackage: String? = null
+        
+        for (info in activities) {
+            val label = info.loadLabel(pm).toString()
+            val pkg = info.activityInfo.packageName
+            
+            val score = when {
+                label.equals(appName, ignoreCase = true) -> 100
+                label.startsWith(appName, ignoreCase = true) -> 80
+                label.contains(appName, ignoreCase = true) -> 60
+                pkg.contains(appName, ignoreCase = true) -> 40
+                else -> 0
+            }
+            
+            if (score > bestScore) {
+                bestScore = score
+                bestPackage = pkg
             }
         }
-        if (targetPackage != null) {
-            val intent = pm.getLaunchIntentForPackage(targetPackage)?.apply {
+        
+        if (bestPackage != null) {
+            val intent = pm.getLaunchIntentForPackage(bestPackage)?.apply {
                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             if (intent != null) {
-                DbgLog.d("Opening app $appName with package $targetPackage", tag = "ACTION_DBG")
+                DbgLog.d("Opening app $appName matched $bestPackage with score $bestScore", tag = "ACTION_DBG")
                 context.startActivity(intent)
                 return ExecutionResult(true, "openApp($appName)")
             }
         }
+        
         return ExecutionResult(false, "App not found or cannot be launched: $appName")
     }
 

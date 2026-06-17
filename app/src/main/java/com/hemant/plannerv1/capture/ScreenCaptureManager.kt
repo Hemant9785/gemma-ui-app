@@ -52,11 +52,14 @@ class ScreenCaptureManager(
     suspend fun capture(sessionId: String, stepNumber: Int): ScreenshotFrame = mutex.withLock {
         DbgLog.i("Capture start session=$sessionId step=$stepNumber ready=$isReady")
         runCatching {
-            hideFloatingBarForCapture()
             try {
                 val reader = ensureReader()
-                drainImages(reader)
-                delay(250)
+                drainImages(reader) // Clear out stale frames
+                hideFloatingBarForCapture() // Hide UI, which triggers a fresh frame
+                
+                // Wait briefly for the frame to arrive if the hide was too fast
+                delay(100)
+                
                 val image = acquireLatestImage(reader)
                     ?: error("Screen capture produced no image. Try granting screen capture again.")
                 val bitmap = image.useToBitmap()
