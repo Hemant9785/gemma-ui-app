@@ -6,6 +6,7 @@ enum class UiActionType(val value: String) {
     SCROLL_UP("scroll_up"),
     SCROLL_DOWN("scroll_down"),
     OPEN_APP("open_app"),
+    WAIT("wait"),
     BACK("back"),
     DONE("done"),
 }

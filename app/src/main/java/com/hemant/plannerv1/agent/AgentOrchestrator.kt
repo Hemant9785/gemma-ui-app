@@ -204,11 +204,14 @@ class AgentOrchestrator(
                         return
                     }
                     if (!execution.success) {
-                        finish(sessionId, "Failed: execution", invalidJsonCount, execution.message)
-                        return
+                        DbgLog.w("Action failed, continuing to next step for recovery. error=${execution.message}")
+                        delay(safetyController.actionDelayMs)
+                        FloatingBarService.hideActionMarker()
+                        continue
                     }
                     val settleDelay = when (parsedAction.type) {
                         UiActionType.OPEN_APP -> 2000L
+                        UiActionType.WAIT -> 2000L
                         UiActionType.CLICK -> 800L
                         UiActionType.TYPE_TEXT -> 1000L
                         UiActionType.SCROLL_UP, UiActionType.SCROLL_DOWN -> 600L
@@ -283,6 +286,7 @@ class AgentOrchestrator(
             UiActionType.SCROLL_UP -> gestureExecutor.scrollUp()
             UiActionType.SCROLL_DOWN -> gestureExecutor.scrollDown()
             UiActionType.OPEN_APP -> gestureExecutor.openApp(action.appName.orEmpty())
+            UiActionType.WAIT -> ExecutionResult(true, "waiting")
             UiActionType.BACK -> gestureExecutor.back()
             UiActionType.DONE -> ExecutionResult(true, "done()")
         }

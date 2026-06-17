@@ -66,8 +66,22 @@ class GestureExecutor(private val context: Context) {
                 label.equals(appName, ignoreCase = true) -> 100
                 label.startsWith(appName, ignoreCase = true) -> 80
                 label.contains(appName, ignoreCase = true) -> 60
+                appName.contains(label, ignoreCase = true) -> 50
                 pkg.contains(appName, ignoreCase = true) -> 40
-                else -> 0
+                else -> {
+                    val words = appName.split("\\s+".toRegex()).filter { it.isNotBlank() }
+                    var windowScore = 0
+                    if (words.size >= 2) {
+                        for (i in 0 until words.size - 1) {
+                            val window = "${words[i]} ${words[i+1]}"
+                            if (label.contains(window, ignoreCase = true) || pkg.contains(window, ignoreCase = true)) {
+                                windowScore = 30
+                                break
+                            }
+                        }
+                    }
+                    windowScore
+                }
             }
             
             if (score > bestScore) {

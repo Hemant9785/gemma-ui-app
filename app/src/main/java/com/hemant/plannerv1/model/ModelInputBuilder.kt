@@ -36,7 +36,11 @@ class ModelInputBuilder {
                 val resultStr = if (record.executionResult.success) {
                     "success"
                 } else {
-                    "failure (Try different approach. Error: ${record.executionResult.message})"
+                    if (action.type == UiActionType.OPEN_APP) {
+                        "failure (Try different approach. Try different name or go to home screen, scroll up and use search bar. Error: ${record.executionResult.message})"
+                    } else {
+                        "failure (Try different approach. Error: ${record.executionResult.message})"
+                    }
                 }
                 
                 "${record.stepNumber}. ${action.type.value} ($actionDetails) -> $resultStr"
@@ -59,14 +63,15 @@ class ModelInputBuilder {
                 - For click, output bounding_box [ymin, xmin, ymax, xmax] in 0-1000 scale. Center of the box will be clicked.
                 - For type_text, output bounding_box of the input field to focus, and the text to type.
                 - If a target is not visible, use scroll_up or scroll_down.
+                - If you are waiting for a page to load or an animation to finish, use wait.
                 - Use back if stuck. Use done when goal is completed.
 
                 Based on the screenshot and above context, what is the next action?
                 
                 Output rules:
-                Return JSON only.
+                Return JSON only. Keep 'thought' and 'reason' extremely concise (max 1 sentence). Do not be verbose.
                 Required JSON schema:
-                {"thought":"your step-by-step reasoning","action":"click|type_text|scroll_up|scroll_down|open_app|back|done","bounding_box":[ymin,xmin,ymax,xmax] | null,"text":string|null,"app_name":string|null,"reason":"short reason","done":boolean}
+                {"thought":"your concise step-by-step reasoning","action":"click|type_text|scroll_up|scroll_down|open_app|wait|back|done","bounding_box":[ymin,xmin,ymax,xmax] | null,"text":string|null,"app_name":string|null,"reason":"concise reason","done":boolean}
             """.trimIndent()
 
         DbgLog.d(

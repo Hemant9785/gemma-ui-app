@@ -109,6 +109,7 @@ class ModelOutputParser {
             UiActionType.SCROLL_UP, UiActionType.SCROLL_DOWN -> validateScrollAction(action)
             UiActionType.OPEN_APP -> validateOpenAppAction(action)
             UiActionType.BACK -> validateBackAction(action)
+            UiActionType.WAIT -> { /* No specific validation required */ }
             UiActionType.DONE -> validateDoneAction(action)
         }
     }
