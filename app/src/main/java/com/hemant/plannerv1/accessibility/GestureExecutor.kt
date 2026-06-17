@@ -114,13 +114,31 @@ class GestureExecutor(private val context: Context) {
 
     suspend fun typeText(x: Int, y: Int, text: String): ExecutionResult {
         DbgLog.d("Executing typeText at x=$x, y=$y with text: $text", tag = "ACTION_DBG")
+        val service = serviceOrNull() ?: return ExecutionResult(false, "Accessibility service disconnected.")
+
+        // Approach 1: Pre-Click Node Anchoring
+        // We find the exact node before the click happens, so even if the keyboard 
+        // pushes the layout up and invalidates the (x,y) coordinates, we still have the reference.
+        var preClickNode: AccessibilityNodeInfo? = null
+        for (window in service.windows) {
+            val node = findNodeAtPoint(window.root, x, y)
+            var n: AccessibilityNodeInfo? = node
+            while (n != null) {
+                if (n.isEditable || n.className?.contains("EditText") == true) {
+                    preClickNode = n
+                    DbgLog.d("Pre-click anchoring found editable node: class=${n.className}", tag = "ACTION_DBG")
+                    break
+                }
+                n = n.parent
+            }
+            if (preClickNode != null) break
+        }
+
         val clickResult = click(x, y)
         if (!clickResult.success) {
             DbgLog.e("typeText click failed", tag = "ACTION_DBG")
             return ExecutionResult(false, "Click to focus failed.")
         }
-        
-        val service = serviceOrNull() ?: return ExecutionResult(false, "Accessibility service disconnected.")
         
         var success = false
         var lastTargetNode: AccessibilityNodeInfo? = null
@@ -128,14 +146,16 @@ class GestureExecutor(private val context: Context) {
         for (i in 1..10) {
             kotlinx.coroutines.delay(300)
             
-            var targetNode: AccessibilityNodeInfo? = null
+            var targetNode: AccessibilityNodeInfo? = preClickNode
             
             // 1. Try finding focused input
-            for (window in service.windows) {
-                val f = window.root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-                if (f != null) {
-                    targetNode = f
-                    break
+            if (targetNode == null) {
+                for (window in service.windows) {
+                    val f = window.root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                    if (f != null) {
+                        targetNode = f
+                        break
+                    }
                 }
             }
             

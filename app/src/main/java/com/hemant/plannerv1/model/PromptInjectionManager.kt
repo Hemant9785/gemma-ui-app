@@ -8,13 +8,14 @@ import androidx.compose.runtime.setValue
 class PromptInjectionManager(context: Context) {
     private val prefs = context.getSharedPreferences("prompt_injection_prefs", Context.MODE_PRIVATE)
 
-    var isEnabled by mutableStateOf(prefs.getBoolean("is_enabled", false))
-        private set
+    private var _isEnabled by mutableStateOf(prefs.getBoolean("is_enabled", false))
 
-    fun setEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean("is_enabled", enabled).apply()
-        isEnabled = enabled
-    }
+    var isEnabled: Boolean
+        get() = _isEnabled
+        set(value) {
+            prefs.edit().putBoolean("is_enabled", value).apply()
+            _isEnabled = value
+        }
 
     fun getChecklistForPackage(currentActivity: String): String? {
         if (!isEnabled) return null

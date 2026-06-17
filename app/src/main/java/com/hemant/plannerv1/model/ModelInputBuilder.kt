@@ -19,6 +19,7 @@ class ModelInputBuilder {
         maxSteps: Int,
         frame: ScreenshotFrame,
         currentActivity: String,
+        lastError: String? = null,
     ): ModelRequest {
         val stepsDone = if (history.records.isEmpty()) {
             "None."
@@ -50,6 +51,10 @@ class ModelInputBuilder {
         val injection = com.hemant.plannerv1.AppContainer.promptInjectionManager.getChecklistForPackage(currentActivity)
         val injectionStr = if (injection != null) "\n$injection" else ""
 
+        val errorWarning = if (lastError != null) {
+            "\nSYSTEM WARNING: Your previous output failed with error: '$lastError'\nPlease correct your JSON format or action type.\n"
+        } else ""
+
         val prompt = """
                 You are UIActionAgent, an on-device Android UI agent.
                 Decide the next single action to make progress toward the user goal.
@@ -70,7 +75,7 @@ class ModelInputBuilder {
                 - If a target is not visible, use scroll_up or scroll_down.
                 - If you are waiting for a page to load or an animation to finish, use wait.
                 - Use back if stuck. Use done when goal is completed.$injectionStr
-
+                $errorWarning
                 Based on the screenshot and above context, what is the next action?
                 
                 Output rules:
