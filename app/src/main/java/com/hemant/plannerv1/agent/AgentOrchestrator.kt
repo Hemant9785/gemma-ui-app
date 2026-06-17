@@ -148,6 +148,33 @@ class AgentOrchestrator(
                     }
 
                     _state.update { it.copy(status = "Executing ${parsedAction.type.value}") }
+                    
+                    var markerX: Int? = null
+                    var markerY: Int? = null
+                    var markerBounds: android.graphics.Rect? = null
+                    val box = parsedAction.boundingBox
+                    if (box != null && box.size >= 4) {
+                        val top = frame.mapModelYToScreen(box[0])
+                        val left = frame.mapModelXToScreen(box[1])
+                        val bottom = frame.mapModelYToScreen(box[2])
+                        val right = frame.mapModelXToScreen(box[3])
+                        markerBounds = android.graphics.Rect(left, top, right, bottom)
+                        markerX = (left + right) / 2
+                        markerY = (top + bottom) / 2
+                    }
+                    val actionText = when (parsedAction.type) {
+                        UiActionType.OPEN_APP -> "open_app(${parsedAction.appName ?: ""})"
+                        UiActionType.TYPE_TEXT -> "type_text(${parsedAction.text ?: ""})"
+                        else -> parsedAction.type.value
+                    }
+                    FloatingBarService.showActionMarker(
+                        text = actionText,
+                        x = markerX,
+                        y = markerY,
+                        bounds = markerBounds
+                    )
+                    delay(300)
+
                     execution = execute(parsedAction, frame)
                     DbgLog.i(
                         "Agent execution sessionId=$sessionId step=$step action=${parsedAction.type.value} " +
@@ -180,7 +207,18 @@ class AgentOrchestrator(
                         finish(sessionId, "Failed: execution", invalidJsonCount, execution.message)
                         return
                     }
-                    delay(safetyController.actionDelayMs)
+                    val settleDelay = when (parsedAction.type) {
+                        UiActionType.OPEN_APP -> 2000L
+                        UiActionType.CLICK -> 800L
+                        UiActionType.TYPE_TEXT -> 1000L
+                        UiActionType.SCROLL_UP, UiActionType.SCROLL_DOWN -> 600L
+                        UiActionType.BACK -> 800L
+                        else -> 0L
+                    }
+                    val finalDelay = maxOf(safetyController.actionDelayMs, settleDelay)
+                    DbgLog.d("Waiting $finalDelay ms for action ${parsedAction.type.value} to settle...")
+                    delay(finalDelay)
+                    FloatingBarService.hideActionMarker()
                 } catch (parseError: IllegalArgumentException) {
                     invalidJsonCount += 1
                     error = parseError.message ?: "Invalid JSON output."
@@ -232,10 +270,6 @@ class AgentOrchestrator(
                 val centerX = (box[1] + box[3]) / 2.0
                 val screenX = frame.mapModelXToScreen(centerX)
                 val screenY = frame.mapModelYToScreen(centerY)
-                DbgLog.d("Agent click preview x=$screenX y=$screenY durationMs=500")
-                FloatingBarService.showClickMarker(screenX, screenY)
-                delay(500)
-                FloatingBarService.hideClickMarker()
                 gestureExecutor.click(screenX, screenY)
             }
             UiActionType.TYPE_TEXT -> {
@@ -260,6 +294,7 @@ class AgentOrchestrator(
         invalidJsonCount: Int,
         error: String?,
     ) {
+        FloatingBarService.hideActionMarker()
         testLogger.completeSession(sessionId, status, invalidJsonCount, error)
         _state.update {
             it.copy(

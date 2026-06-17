@@ -8,6 +8,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -24,6 +25,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.ViewModelStore
@@ -137,12 +145,44 @@ class FloatingBarService : LifecycleService(), SavedStateRegistryOwner, ViewMode
                     val currentMarker = marker
                     if (currentMarker != null) {
                         Canvas(modifier = Modifier.fillMaxSize()) {
-                            drawCircle(
-                                color = androidx.compose.ui.graphics.Color.Red,
-                                radius = 36.dp.toPx(),
-                                center = Offset(currentMarker.x.toFloat(), currentMarker.y.toFloat()),
-                                style = Stroke(width = 8.dp.toPx()),
-                            )
+                            if (currentMarker.bounds != null) {
+                                drawRect(
+                                    color = androidx.compose.ui.graphics.Color.Red,
+                                    topLeft = Offset(currentMarker.bounds.left.toFloat(), currentMarker.bounds.top.toFloat()),
+                                    size = androidx.compose.ui.geometry.Size(
+                                        currentMarker.bounds.width().toFloat(),
+                                        currentMarker.bounds.height().toFloat()
+                                    ),
+                                    style = Stroke(width = 8.dp.toPx())
+                                )
+                            } else if (currentMarker.x != null && currentMarker.y != null) {
+                                drawCircle(
+                                    color = androidx.compose.ui.graphics.Color.Red,
+                                    radius = 36.dp.toPx(),
+                                    center = Offset(currentMarker.x.toFloat(), currentMarker.y.toFloat()),
+                                    style = Stroke(width = 8.dp.toPx()),
+                                )
+                            }
+                        }
+                        
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(bottom = 96.dp),
+                            contentAlignment = Alignment.BottomCenter
+                        ) {
+                            Surface(
+                                color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.8f),
+                                shape = RoundedCornerShape(8.dp),
+                            ) {
+                                Text(
+                                    text = currentMarker.text,
+                                    color = androidx.compose.ui.graphics.Color.White,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp
+                                )
+                            }
                         }
                     }
                 }
@@ -253,7 +293,7 @@ class FloatingBarService : LifecycleService(), SavedStateRegistryOwner, ViewMode
         private const val CHANNEL_ID = "ui_action_agent_overlay"
         private const val NOTIFICATION_ID = 2200
         private val mainHandler = Handler(Looper.getMainLooper())
-        private val markerState = MutableStateFlow<ClickMarker?>(null)
+        private val markerState = MutableStateFlow<ActionMarker?>(null)
 
         @Volatile
         private var activeInstance: FloatingBarService? = null
@@ -277,17 +317,17 @@ class FloatingBarService : LifecycleService(), SavedStateRegistryOwner, ViewMode
             }
         }
 
-        fun showClickMarker(x: Int, y: Int) {
+        fun showActionMarker(text: String, x: Int? = null, y: Int? = null, bounds: Rect? = null) {
             mainHandler.post {
-                markerState.value = ClickMarker(x = x, y = y)
-                DbgLog.i("FloatingBarService click marker show x=$x y=$y")
+                markerState.value = ActionMarker(x = x, y = y, bounds = bounds, text = text)
+                DbgLog.i("FloatingBarService action marker show text=$text")
             }
         }
 
-        fun hideClickMarker() {
+        fun hideActionMarker() {
             mainHandler.post {
                 markerState.value = null
-                DbgLog.d("FloatingBarService click marker hide")
+                DbgLog.d("FloatingBarService action marker hide")
             }
         }
     }
@@ -308,7 +348,9 @@ class FloatingBarService : LifecycleService(), SavedStateRegistryOwner, ViewMode
     }
 }
 
-private data class ClickMarker(
-    val x: Int,
-    val y: Int,
+private data class ActionMarker(
+    val x: Int?,
+    val y: Int?,
+    val bounds: Rect?,
+    val text: String
 )

@@ -4,6 +4,8 @@ import com.hemant.plannerv1.agent.ActionHistory
 import com.hemant.plannerv1.capture.ScreenshotFrame
 import com.hemant.plannerv1.logging.DbgLog
 
+import com.hemant.plannerv1.agent.UiActionType
+
 data class ModelRequest(
     val prompt: String,
     val screenshotPath: String,
@@ -22,7 +24,22 @@ class ModelInputBuilder {
             "None."
         } else {
             history.records.joinToString("\n") { record ->
-                "${record.stepNumber}. ${record.action.type.value} - Success: ${record.executionResult.success}"
+                val action = record.action
+                
+                val actionDetails = when (action.type) {
+                    UiActionType.OPEN_APP -> "${action.appName}"
+                    UiActionType.TYPE_TEXT -> "text: '${action.text}'"
+                    UiActionType.CLICK -> "reason: ${action.reason}"
+                    else -> "reason: ${action.reason}"
+                }
+                
+                val resultStr = if (record.executionResult.success) {
+                    "success"
+                } else {
+                    "failure (Try different approach. Error: ${record.executionResult.message})"
+                }
+                
+                "${record.stepNumber}. ${action.type.value} ($actionDetails) -> $resultStr"
             }
         }
 

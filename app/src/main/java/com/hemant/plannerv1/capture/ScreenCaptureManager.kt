@@ -225,10 +225,10 @@ class ScreenCaptureManager(
         }
     }
 
-    private fun acquireLatestImage(reader: ImageReader): Image? {
+    private suspend fun acquireLatestImage(reader: ImageReader): Image? {
         repeat(5) {
             reader.acquireLatestImage()?.let { return it }
-            Thread.sleep(100)
+            delay(100)
         }
         return reader.acquireLatestImage()
     }
