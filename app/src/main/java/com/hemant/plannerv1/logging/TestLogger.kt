@@ -26,6 +26,15 @@ data class StepLogEntry(
     val error: String?,
 )
 
+data class StepData(
+    val stepNumber: Int,
+    val screenshotPath: String?,
+    val rawOutput: String?,
+    val parsedAction: UiAction?,
+    val latencyMs: Long,
+    val error: String?,
+)
+
 data class EvaluationSession(
     val sessionId: String,
     val goal: String,
@@ -33,8 +42,7 @@ data class EvaluationSession(
     val steps: Int,
     val averageLatencyMs: Long,
     val invalidJsonCount: Int,
-    val screenshots: List<String>,
-    val actions: List<String>,
+    val stepDataList: List<StepData>,
     val lastError: String?,
     val logPath: String,
 )
@@ -114,8 +122,7 @@ class TestLogger(private val context: Context) {
         var invalidJsonCount = 0
         var lastError: String? = null
         val latencies = mutableListOf<Long>()
-        val screenshots = mutableListOf<String>()
-        val actions = mutableListOf<String>()
+        val stepsMap = mutableMapOf<Int, StepData>()
 
         file.forEachLine { line ->
             val obj = runCatching {
@@ -127,12 +134,26 @@ class TestLogger(private val context: Context) {
                     goal = obj.stringOrNull("goal").orEmpty()
                 }
                 "step" -> {
-                    obj.stringOrNull("screenshotPath")?.let { screenshots += it }
-                    obj.longOrNull("latencyMs")?.let { latencies += it }
-                    obj.getAsJsonObjectOrNull("parsedAction")?.let { action ->
-                        actions += action.toString()
-                    }
-                    obj.stringOrNull("error")?.let { lastError = it }
+                    val stepNum = obj.intOrNull("stepNumber") ?: 0
+                    val latency = obj.longOrNull("latencyMs") ?: 0L
+                    if (latency > 0) latencies += latency
+                    
+                    val actionStr = obj.getAsJsonObjectOrNull("parsedAction")?.toString()
+                    val parsedAction = runCatching {
+                        if (actionStr != null) gson.fromJson(actionStr, UiAction::class.java) else null
+                    }.getOrNull()
+                    
+                    val err = obj.stringOrNull("error")
+                    if (err != null) lastError = err
+                    
+                    stepsMap[stepNum] = StepData(
+                        stepNumber = stepNum,
+                        screenshotPath = obj.stringOrNull("screenshotPath"),
+                        rawOutput = obj.stringOrNull("rawModelOutput"),
+                        parsedAction = parsedAction,
+                        latencyMs = latency,
+                        error = err,
+                    )
                 }
                 "session_end" -> {
                     status = obj.stringOrNull("status") ?: status
@@ -141,6 +162,7 @@ class TestLogger(private val context: Context) {
                 }
             }
         }
+        val stepDataList = stepsMap.toSortedMap().values.toList()
         return EvaluationSession(
             sessionId = sessionId,
             goal = goal,
@@ -148,8 +170,7 @@ class TestLogger(private val context: Context) {
             steps = latencies.size,
             averageLatencyMs = if (latencies.isEmpty()) 0 else latencies.average().toLong(),
             invalidJsonCount = invalidJsonCount,
-            screenshots = screenshots,
-            actions = actions,
+            stepDataList = stepDataList,
             lastError = lastError,
             logPath = file.absolutePath,
         )

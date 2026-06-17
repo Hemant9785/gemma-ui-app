@@ -1,26 +1,27 @@
 package com.hemant.plannerv1.overlay
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -29,75 +30,105 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.hemant.plannerv1.AppContainer
 import com.hemant.plannerv1.ui.theme.PlannerV1Theme
 
 @Composable
-fun FloatingBarView(onClose: () -> Unit) {
+fun FloatingBarView(onClose: () -> Unit, onDrag: (Float, Float) -> Unit = { _, _ -> }) {
     PlannerV1Theme {
         val agentState by AppContainer.agentOrchestrator.state.collectAsState()
         var goal by remember { mutableStateOf(agentState.goal) }
 
         Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp,
-            shadowElevation = 6.dp,
-            shape = RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp),
-        ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedTextField(
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = 56.dp),
-                        value = goal,
-                        onValueChange = { goal = it },
-                        singleLine = true,
-                        label = { Text("Command") },
-                        enabled = !agentState.isRunning,
-                    )
-                    ElevatedButton(
-                        onClick = {
-                            AppContainer.agentOrchestrator.start(goal)
-                        },
-                        enabled = !agentState.isRunning && goal.isNotBlank(),
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Run")
-                        Spacer(Modifier.width(6.dp))
-                        Text("Run")
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth()
+                .clip(CircleShape)
+                .pointerInput(Unit) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        onDrag(dragAmount.x, dragAmount.y)
                     }
+                },
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+            shadowElevation = 8.dp,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Compact Status Indicator
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(if (agentState.isRunning) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                )
+                
+                // Sleek Text Field
+                BasicTextField(
+                    value = goal,
+                    onValueChange = { goal = it },
+                    singleLine = true,
+                    enabled = !agentState.isRunning,
+                    textStyle = TextStyle(
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 16.sp
+                    ),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.weight(1f),
+                    decorationBox = { innerTextField ->
+                        if (goal.isEmpty()) {
+                            Text(
+                                text = "Enter command...",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                fontSize = 16.sp
+                            )
+                        }
+                        innerTextField()
+                    }
+                )
+
+                // Compact Actions
+                if (!agentState.isRunning) {
+                    IconButton(
+                        onClick = { AppContainer.agentOrchestrator.start(goal) },
+                        enabled = goal.isNotBlank(),
+                        modifier = Modifier.size(36.dp),
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = "Run", modifier = Modifier.size(20.dp))
+                    }
+                } else {
                     IconButton(
                         onClick = { AppContainer.agentOrchestrator.stop() },
-                        enabled = agentState.isRunning,
+                        modifier = Modifier.size(36.dp),
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                        )
                     ) {
-                        Icon(Icons.Default.Stop, contentDescription = "Stop")
-                    }
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.Default.Close, contentDescription = "Close")
+                        Icon(Icons.Default.Stop, contentDescription = "Stop", modifier = Modifier.size(20.dp))
                     }
                 }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+
+                Spacer(Modifier.width(4.dp))
+                
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.size(36.dp)
                 ) {
-                    AssistChip(
-                        onClick = {},
-                        label = { Text("Step ${agentState.currentStep}/${agentState.maxSteps}") },
-                    )
-                    Text(
-                        text = agentState.status,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(20.dp))
                 }
             }
         }

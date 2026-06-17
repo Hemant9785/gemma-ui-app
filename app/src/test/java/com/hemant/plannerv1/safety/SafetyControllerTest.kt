@@ -23,10 +23,9 @@ class SafetyControllerTest {
     fun detectsRepeatedIdenticalAction() {
         val click = UiAction(
             type = UiActionType.CLICK,
-            x = 20.0,
-            y = 40.0,
+            boundingBox = listOf(20.0, 40.0, 30.0, 50.0),
             text = null,
-            direction = null,
+            appName = null,
             reason = "tap",
             done = false,
         )

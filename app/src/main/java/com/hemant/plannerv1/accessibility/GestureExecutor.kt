@@ -7,7 +7,7 @@ import android.graphics.Path
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import com.hemant.plannerv1.agent.ExecutionResult
-import com.hemant.plannerv1.agent.SwipeDirection
+import com.hemant.plannerv1.logging.DbgLog
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
@@ -17,59 +17,192 @@ class GestureExecutor(private val context: Context) {
     }
 
     suspend fun click(x: Int, y: Int): ExecutionResult {
+        DbgLog.d("Executing click gesture at x=$x, y=$y", tag = "ACTION_DBG")
         val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
         return dispatch(path, durationMs = 80, label = "click($x,$y)")
     }
 
-    suspend fun swipe(direction: SwipeDirection): ExecutionResult {
+    suspend fun scrollUp(): ExecutionResult {
         val metrics = context.resources.displayMetrics
         val centerX = metrics.widthPixels / 2f
         val centerY = metrics.heightPixels / 2f
-        val distanceX = metrics.widthPixels * 0.32f
         val distanceY = metrics.heightPixels * 0.32f
-        val path = Path()
-        when (direction) {
-            SwipeDirection.UP -> {
-                path.moveTo(centerX, centerY + distanceY)
-                path.lineTo(centerX, centerY - distanceY)
-            }
-            SwipeDirection.DOWN -> {
-                path.moveTo(centerX, centerY - distanceY)
-                path.lineTo(centerX, centerY + distanceY)
-            }
-            SwipeDirection.LEFT -> {
-                path.moveTo(centerX + distanceX, centerY)
-                path.lineTo(centerX - distanceX, centerY)
-            }
-            SwipeDirection.RIGHT -> {
-                path.moveTo(centerX - distanceX, centerY)
-                path.lineTo(centerX + distanceX, centerY)
+        val path = Path().apply {
+            moveTo(centerX, centerY - distanceY)
+            lineTo(centerX, centerY + distanceY)
+        }
+        DbgLog.d("Executing scrollUp gesture from (${centerX}, ${centerY - distanceY}) to (${centerX}, ${centerY + distanceY})", tag = "ACTION_DBG")
+        return dispatch(path, durationMs = 420, label = "scrollUp()")
+    }
+
+    suspend fun scrollDown(): ExecutionResult {
+        val metrics = context.resources.displayMetrics
+        val centerX = metrics.widthPixels / 2f
+        val centerY = metrics.heightPixels / 2f
+        val distanceY = metrics.heightPixels * 0.32f
+        val path = Path().apply {
+            moveTo(centerX, centerY + distanceY)
+            lineTo(centerX, centerY - distanceY)
+        }
+        DbgLog.d("Executing scrollDown gesture from (${centerX}, ${centerY + distanceY}) to (${centerX}, ${centerY - distanceY})", tag = "ACTION_DBG")
+        return dispatch(path, durationMs = 420, label = "scrollDown()")
+    }
+
+    fun openApp(appName: String): ExecutionResult {
+        val pm = context.packageManager
+        val packages = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
+        var targetPackage: String? = null
+        for (appInfo in packages) {
+            val label = pm.getApplicationLabel(appInfo).toString()
+            if (label.equals(appName, ignoreCase = true)) {
+                targetPackage = appInfo.packageName
+                break
             }
         }
-        return dispatch(path, durationMs = 420, label = "swipe(${direction.value})")
+        if (targetPackage != null) {
+            val intent = pm.getLaunchIntentForPackage(targetPackage)?.apply {
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (intent != null) {
+                DbgLog.d("Opening app $appName with package $targetPackage", tag = "ACTION_DBG")
+                context.startActivity(intent)
+                return ExecutionResult(true, "openApp($appName)")
+            }
+        }
+        return ExecutionResult(false, "App not found or cannot be launched: $appName")
     }
 
     fun back(): ExecutionResult {
         val service = serviceOrNull()
             ?: return ExecutionResult(false, "Accessibility service is not connected.")
         val success = service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+        DbgLog.d("Executing back action, success=$success", tag = "ACTION_DBG")
         return ExecutionResult(success, if (success) "back()" else "Back action failed.")
     }
 
-    fun type(text: String): ExecutionResult {
-        val service = serviceOrNull()
-            ?: return ExecutionResult(false, "Accessibility service is not connected.")
-        val focused = service.rootInActiveWindow
-            ?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-            ?: return ExecutionResult(false, "No focused editable field is available.")
-        val arguments = Bundle().apply {
-            putCharSequence(
-                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                text,
-            )
+    suspend fun typeText(x: Int, y: Int, text: String): ExecutionResult {
+        DbgLog.d("Executing typeText at x=$x, y=$y with text: $text", tag = "ACTION_DBG")
+        val clickResult = click(x, y)
+        if (!clickResult.success) {
+            DbgLog.e("typeText click failed", tag = "ACTION_DBG")
+            return ExecutionResult(false, "Click to focus failed.")
         }
-        val success = focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-        return ExecutionResult(success, if (success) "type(${text.length} chars)" else "Text action failed.")
+        
+        val service = serviceOrNull() ?: return ExecutionResult(false, "Accessibility service disconnected.")
+        
+        var success = false
+        var lastTargetNode: AccessibilityNodeInfo? = null
+        
+        for (i in 1..10) {
+            kotlinx.coroutines.delay(300)
+            
+            var targetNode: AccessibilityNodeInfo? = null
+            
+            // 1. Try finding focused input
+            for (window in service.windows) {
+                val f = window.root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                if (f != null) {
+                    targetNode = f
+                    break
+                }
+            }
+            
+            // 2. Try finding editable nodes
+            if (targetNode == null) {
+                val editableNodes = mutableListOf<AccessibilityNodeInfo>()
+                for (window in service.windows) {
+                    editableNodes.addAll(findEditableNodes(window.root))
+                }
+                targetNode = editableNodes.firstOrNull { it.isFocused } ?: editableNodes.firstOrNull()
+            }
+            
+            // 3. Try finding node at clicked point
+            if (targetNode == null) {
+                for (window in service.windows) {
+                    val node = findNodeAtPoint(window.root, x, y)
+                    if (node != null && (node.isEditable || node.className?.contains("EditText") == true)) {
+                        targetNode = node
+                        break
+                    }
+                }
+            }
+            
+            if (targetNode != null) {
+                lastTargetNode = targetNode
+                targetNode.refresh()
+                DbgLog.d("typeText attempt $i found target node: class=${targetNode.className}, isEditable=${targetNode.isEditable}", tag = "ACTION_DBG")
+                
+                var current: AccessibilityNodeInfo? = targetNode
+                while (current != null && !success) {
+                    val arguments = Bundle().apply {
+                        putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                    }
+                    success = current.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+                    if (!success) {
+                        current = current.parent
+                    }
+                }
+                
+                if (!success) {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    val clip = android.content.ClipData.newPlainText("text", text)
+                    clipboard.setPrimaryClip(clip)
+                    
+                    current = targetNode
+                    while (current != null && !success) {
+                        current.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                        success = current.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+                        if (!success) {
+                            current = current.parent
+                        }
+                    }
+                }
+            }
+            
+            if (success) {
+                DbgLog.d("typeText successful on attempt $i, submitting enter and dismissing keyboard", tag = "ACTION_DBG")
+                kotlinx.coroutines.delay(300)
+                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                    lastTargetNode?.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+                }
+                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                return ExecutionResult(true, "typeText(${text.length} chars)")
+            }
+        }
+        
+        DbgLog.e("typeText failed after 10 attempts. Last node class=${lastTargetNode?.className}", tag = "ACTION_DBG")
+        return ExecutionResult(false, "Found input node but SET_TEXT and PASTE failed.")
+    }
+
+    private fun findEditableNodes(root: AccessibilityNodeInfo?): List<AccessibilityNodeInfo> {
+        val list = mutableListOf<AccessibilityNodeInfo>()
+        if (root == null) return list
+        val queue = java.util.ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            if (node.isEditable || node.className?.contains("EditText") == true) {
+                list.add(node)
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.add(it) }
+            }
+        }
+        return list
+    }
+
+    private fun findNodeAtPoint(root: AccessibilityNodeInfo?, x: Int, y: Int): AccessibilityNodeInfo? {
+        if (root == null) return null
+        val rect = android.graphics.Rect()
+        root.getBoundsInScreen(rect)
+        if (!rect.contains(x, y)) return null
+        
+        for (i in 0 until root.childCount) {
+            val child = root.getChild(i)
+            val found = findNodeAtPoint(child, x, y)
+            if (found != null) return found
+        }
+        return root
     }
 
     private suspend fun dispatch(

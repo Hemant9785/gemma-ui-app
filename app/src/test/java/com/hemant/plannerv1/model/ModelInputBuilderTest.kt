@@ -26,12 +26,14 @@ class ModelInputBuilderTest {
             stepNumber = 2,
             maxSteps = 10,
             frame = frame,
+            currentActivity = "com.android.chrome.MainActivity"
         )
 
         assertEquals("/tmp/model.png", request.screenshotPath)
-        assertTrue(request.prompt.contains("Search weather in Chrome"))
-        assertTrue(request.prompt.contains("Image width: 1024"))
-        assertTrue(request.prompt.contains("click(x, y)"))
-        assertTrue(request.prompt.contains("Return JSON only"))
+        assertTrue(request.prompt.contains("GOAL: Search weather in Chrome"))
+        assertTrue(request.prompt.contains("Current Activity: com.android.chrome.MainActivity"))
+        assertTrue(request.prompt.contains("Steps done:"))
+        assertTrue(request.prompt.contains("For click, output bounding_box"))
+        assertTrue(request.prompt.contains("Return JSON only."))
     }
 }

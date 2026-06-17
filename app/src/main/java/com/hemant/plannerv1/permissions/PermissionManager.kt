@@ -17,9 +17,10 @@ data class PermissionSnapshot(
     val screenCaptureGranted: Boolean,
     val accessibilityEnabled: Boolean,
     val notificationGranted: Boolean,
+    val storageGranted: Boolean,
 ) {
     val allRuntimeReady: Boolean
-        get() = overlayGranted && screenCaptureGranted && accessibilityEnabled && notificationGranted
+        get() = overlayGranted && screenCaptureGranted && accessibilityEnabled && notificationGranted && storageGranted
 }
 
 class PermissionManager(private val context: Context) {
@@ -32,6 +33,7 @@ class PermissionManager(private val context: Context) {
             screenCaptureGranted = screenCaptureGranted,
             accessibilityEnabled = isAccessibilityEnabled(),
             notificationGranted = hasNotificationPermission(),
+            storageGranted = hasStoragePermission(),
         )
     }
 
@@ -84,5 +86,30 @@ class PermissionManager(private val context: Context) {
             activity,
             permission,
         ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
+    fun hasStoragePermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            android.os.Environment.isExternalStorageManager()
+        } else {
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    fun storageSettingsIntent(): Intent {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Intent(
+                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:${context.packageName}"),
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        } else {
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:${context.packageName}"),
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
     }
 }

@@ -10,6 +10,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import com.hemant.plannerv1.capture.ScreenCaptureForegroundService
+import com.hemant.plannerv1.logging.DbgLog
 import com.hemant.plannerv1.overlay.FloatingBarService
 import com.hemant.plannerv1.ui.MainScreen
 import com.hemant.plannerv1.ui.theme.PlannerV1Theme
@@ -41,8 +42,15 @@ class MainActivity : ComponentActivity() {
         refreshPermissions()
     }
 
+    private val storageLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        refreshPermissions()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DbgLog.i("MainActivity onCreate")
         AppContainer.initialize(applicationContext)
         enableEdgeToEdge()
         setContent {
@@ -72,6 +80,13 @@ class MainActivity : ComponentActivity() {
                             notificationLauncher.launch(it)
                         }
                     },
+                    onRequestStorage = {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                            startActivity(AppContainer.permissionManager.storageSettingsIntent())
+                        } else {
+                            storageLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                        }
+                    },
                     onOpenAccessibilitySettings = {
                         startActivity(AppContainer.permissionManager.accessibilitySettingsIntent())
                     },
@@ -98,6 +113,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        DbgLog.d("MainActivity onResume")
         refreshPermissions()
     }
 

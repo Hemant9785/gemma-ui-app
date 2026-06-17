@@ -6,7 +6,7 @@ import com.hemant.plannerv1.agent.UiAction
 class SafetyController(
     val maxSteps: Int = 10,
     val maxInvalidJson: Int = 2,
-    val actionDelayMs: Long = 1_000L,
+    val actionDelayMs: Long = 0L,
 ) {
     private val blockedPackageFragments = listOf(
         "bank",

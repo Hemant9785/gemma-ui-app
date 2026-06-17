@@ -1,6 +1,5 @@
 package com.hemant.plannerv1.model
 
-import com.hemant.plannerv1.agent.SwipeDirection
 import com.hemant.plannerv1.agent.UiActionType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -12,22 +11,52 @@ class ModelOutputParserTest {
     @Test
     fun parsesValidClick() {
         val action = parser.parse(
-            """{"action":"click","x":42,"y":128,"text":null,"direction":null,"reason":"tap search","done":false}""",
+            """{"action":"click","bounding_box":[10,20,30,40],"text":null,"app_name":null,"reason":"tap search","done":false}""",
         )
 
         assertEquals(UiActionType.CLICK, action.type)
-        assertEquals(42.0, action.x!!, 0.0)
-        assertEquals(128.0, action.y!!, 0.0)
+        assertEquals(listOf(10.0, 20.0, 30.0, 40.0), action.boundingBox)
     }
 
     @Test
-    fun parsesValidSwipe() {
+    fun parsesValidScrollUp() {
         val action = parser.parse(
-            """{"action":"swipe","x":null,"y":null,"text":null,"direction":"up","reason":"scroll","done":false}""",
+            """{"action":"scroll_up","bounding_box":null,"text":null,"app_name":null,"reason":"scroll","done":false}""",
         )
 
-        assertEquals(UiActionType.SWIPE, action.type)
-        assertEquals(SwipeDirection.UP, action.direction)
+        assertEquals(UiActionType.SCROLL_UP, action.type)
+    }
+
+    @Test
+    fun parsesValidOpenApp() {
+        val action = parser.parse(
+            """{"action":"open_app","bounding_box":null,"text":null,"app_name":"YouTube","reason":"launching app","done":false}""",
+        )
+
+        assertEquals(UiActionType.OPEN_APP, action.type)
+        assertEquals("YouTube", action.appName)
+    }
+
+    @Test
+    fun parsesDoneWithOmittedDoneFlag() {
+        val action = parser.parse(
+            """{"action":"done","reason":"task finished"}""",
+        )
+
+        assertEquals(UiActionType.DONE, action.type)
+        assertEquals(true, action.done)
+    }
+
+    @Test
+    fun parsesJsonAfterThoughtChannel() {
+        val action = parser.parse(
+            """<|channel>thought
+                The close button is visible near the top-right, so a click is appropriate.
+                <channel|>{"action":"click","bounding_box":[470,82,490,100],"reason":"tap close"}""".trimIndent(),
+        )
+
+        assertEquals(UiActionType.CLICK, action.type)
+        assertEquals(listOf(470.0, 82.0, 490.0, 100.0), action.boundingBox)
     }
 
     @Test
@@ -36,7 +65,7 @@ class ModelOutputParserTest {
             parser.parse(
                 """
                 ```json
-                {"action":"done","x":null,"y":null,"text":null,"direction":null,"reason":"complete","done":true}
+                {"action":"done","reason":"complete","done":true}
                 ```
                 """.trimIndent(),
             )
@@ -47,7 +76,34 @@ class ModelOutputParserTest {
     fun rejectsClickWithoutCoordinates() {
         assertThrows(IllegalArgumentException::class.java) {
             parser.parse(
-                """{"action":"click","x":null,"y":null,"text":null,"direction":null,"reason":"tap","done":false}""",
+                """{"action":"click","bounding_box":null,"text":null,"app_name":null,"reason":"tap","done":false}""",
+            )
+        }
+    }
+
+    @Test
+    fun rejectsTypeTextWithoutText() {
+        assertThrows(IllegalArgumentException::class.java) {
+            parser.parse(
+                """{"action":"type_text","bounding_box":[0,0,10,10],"reason":"enter query"}""",
+            )
+        }
+    }
+
+    @Test
+    fun rejectsBackWithText() {
+        assertThrows(IllegalArgumentException::class.java) {
+            parser.parse(
+                """{"action":"back","text":"oops","reason":"go back","done":false}""",
+            )
+        }
+    }
+
+    @Test
+    fun rejectsDoneWithCoordinates() {
+        assertThrows(IllegalArgumentException::class.java) {
+            parser.parse(
+                """{"action":"done","bounding_box":[0,0,10,10],"reason":"finished","done":true}""",
             )
         }
     }
@@ -56,7 +112,7 @@ class ModelOutputParserTest {
     fun rejectsExtraKeys() {
         assertThrows(IllegalArgumentException::class.java) {
             parser.parse(
-                """{"action":"done","x":null,"y":null,"text":null,"direction":null,"reason":"complete","done":true,"extra":1}""",
+                """{"action":"done","reason":"complete","done":true,"extra":1}""",
             )
         }
     }

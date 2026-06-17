@@ -32,6 +32,7 @@ fun PermissionStatusScreen(
         PermissionRow("Screen capture", snapshot.screenCaptureGranted)
         PermissionRow("Accessibility service", snapshot.accessibilityEnabled)
         PermissionRow("Notifications", snapshot.notificationGranted)
+        PermissionRow("Storage access", snapshot.storageGranted)
     }
 }
 

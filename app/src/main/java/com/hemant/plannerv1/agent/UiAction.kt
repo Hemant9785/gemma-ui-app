@@ -2,35 +2,28 @@ package com.hemant.plannerv1.agent
 
 enum class UiActionType(val value: String) {
     CLICK("click"),
-    TYPE("type"),
-    SWIPE("swipe"),
+    TYPE_TEXT("type_text"),
+    SCROLL_UP("scroll_up"),
+    SCROLL_DOWN("scroll_down"),
+    OPEN_APP("open_app"),
     BACK("back"),
     DONE("done"),
 }
 
-enum class SwipeDirection(val value: String) {
-    UP("up"),
-    DOWN("down"),
-    LEFT("left"),
-    RIGHT("right"),
-}
-
 data class UiAction(
     val type: UiActionType,
-    val x: Double?,
-    val y: Double?,
+    val boundingBox: List<Double>?,
     val text: String?,
-    val direction: SwipeDirection?,
+    val appName: String?,
     val reason: String,
     val done: Boolean,
 ) {
     fun signature(): String {
         return listOf(
             type.value,
-            x?.toInt()?.toString() ?: "",
-            y?.toInt()?.toString() ?: "",
+            boundingBox?.joinToString(",") { it.toInt().toString() } ?: "",
             text ?: "",
-            direction?.value ?: "",
+            appName ?: ""
         ).joinToString("|")
     }
 }

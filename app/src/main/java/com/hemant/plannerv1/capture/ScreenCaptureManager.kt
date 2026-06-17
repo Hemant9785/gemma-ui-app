@@ -17,6 +17,7 @@ import android.util.DisplayMetrics
 import android.view.WindowManager
 import com.hemant.plannerv1.logging.DbgLog
 import com.hemant.plannerv1.logging.DbgLog.summary
+import com.hemant.plannerv1.overlay.FloatingBarService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -51,21 +52,26 @@ class ScreenCaptureManager(
     suspend fun capture(sessionId: String, stepNumber: Int): ScreenshotFrame = mutex.withLock {
         DbgLog.i("Capture start session=$sessionId step=$stepNumber ready=$isReady")
         runCatching {
-            val reader = ensureReader()
-            drainImages(reader)
-            delay(250)
-            val image = acquireLatestImage(reader)
-                ?: error("Screen capture produced no image. Try granting screen capture again.")
-            val bitmap = image.useToBitmap()
+            hideFloatingBarForCapture()
             try {
-                processor.process(sessionId, stepNumber, bitmap).also { frame ->
-                    DbgLog.i(
-                        "Capture success original=${frame.originalWidth}x${frame.originalHeight} " +
-                            "model=${frame.modelWidth}x${frame.modelHeight} path=${frame.originalPath}",
-                    )
+                val reader = ensureReader()
+                drainImages(reader)
+                delay(250)
+                val image = acquireLatestImage(reader)
+                    ?: error("Screen capture produced no image. Try granting screen capture again.")
+                val bitmap = image.useToBitmap()
+                try {
+                    processor.process(sessionId, stepNumber, bitmap).also { frame ->
+                        DbgLog.i(
+                            "Capture success original=${frame.originalWidth}x${frame.originalHeight} " +
+                                "model=${frame.modelWidth}x${frame.modelHeight} path=${frame.originalPath}",
+                        )
+                    }
+                } finally {
+                    bitmap.recycle()
                 }
             } finally {
-                bitmap.recycle()
+                showFloatingBarAfterCapture()
             }
         }.getOrElse { throwable ->
             DbgLog.e("Capture failed: ${throwable.summary()}", throwable)
@@ -180,6 +186,18 @@ class ScreenCaptureManager(
     private fun invalidatePermission(reason: String) {
         DbgLog.w("Capture invalidatePermission reason=$reason")
         releaseProjection(clearPermission = true)
+    }
+
+    private suspend fun hideFloatingBarForCapture() {
+        DbgLog.d("Capture hiding floating bar before screenshot")
+        FloatingBarService.setCaptureVisibility(hidden = true)
+        delay(150)
+    }
+
+    private suspend fun showFloatingBarAfterCapture() {
+        DbgLog.d("Capture restoring floating bar after screenshot")
+        FloatingBarService.setCaptureVisibility(hidden = false)
+        delay(75)
     }
 
     private fun currentDisplayMetrics(): DisplayMetrics {

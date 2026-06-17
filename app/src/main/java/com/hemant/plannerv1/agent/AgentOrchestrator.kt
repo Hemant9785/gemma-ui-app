@@ -6,9 +6,13 @@ import com.hemant.plannerv1.capture.ScreenCaptureManager
 import com.hemant.plannerv1.capture.ScreenshotFrame
 import com.hemant.plannerv1.logging.StepLogEntry
 import com.hemant.plannerv1.logging.TestLogger
+import com.hemant.plannerv1.logging.DbgLog
+import com.hemant.plannerv1.logging.DbgLog.preview
+import com.hemant.plannerv1.logging.DbgLog.summary
 import com.hemant.plannerv1.model.GemmaModelManager
 import com.hemant.plannerv1.model.ModelInputBuilder
 import com.hemant.plannerv1.model.ModelOutputParser
+import com.hemant.plannerv1.overlay.FloatingBarService
 import com.hemant.plannerv1.safety.SafetyController
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -45,6 +49,7 @@ class AgentOrchestrator(
             return
         }
         if (_state.value.isRunning) return
+        DbgLog.i("Agent start requested goalChars=${goal.length} maxSteps=$maxSteps goalPreview=${preview(goal)}")
         stopRequested.set(false)
         job = scope.launch {
             runLoop(goal.trim(), maxSteps.coerceIn(1, safetyController.maxSteps))
@@ -70,6 +75,7 @@ class AgentOrchestrator(
 
     private suspend fun runLoop(goal: String, maxSteps: Int) {
         val sessionId = testLogger.startSession(goal, maxSteps)
+        DbgLog.i("Agent session start sessionId=$sessionId goalChars=${goal.length} maxSteps=$maxSteps")
         var history = ActionHistory()
         var invalidJsonCount = 0
         _state.value = AgentState(
@@ -112,11 +118,25 @@ class AgentOrchestrator(
                 var error: String? = null
 
                 try {
+                    DbgLog.d(
+                        "Agent step start sessionId=$sessionId step=$step historySize=${history.records.size}",
+                    )
                     frame = screenCaptureManager.capture(sessionId, step)
-                    val request = modelInputBuilder.build(goal, history, step, maxSteps, frame)
+                    val currentActivity = gestureExecutor.currentPackageName() ?: "unknown"
+                    val request = modelInputBuilder.build(goal, history, step, maxSteps, frame, currentActivity)
                     prompt = request.prompt
+                    DbgLog.d(
+                        "Agent prompt ready sessionId=$sessionId step=$step promptChars=${prompt?.length} " +
+                            "promptPreview=${preview(prompt)}",
+                    )
+                    DbgLog.d("FULL PROMPT:\n$prompt", tag = "MODEL_DBG")
                     _state.update { it.copy(status = "Running Gemma") }
                     rawOutput = modelManager.generate(request)
+                    DbgLog.d(
+                        "Agent model output sessionId=$sessionId step=$step rawChars=${rawOutput?.length} " +
+                            "rawPreview=${preview(rawOutput)}",
+                    )
+                    DbgLog.d("FULL OUTPUT:\n$rawOutput", tag = "MODEL_DBG")
                     parsedAction = modelOutputParser.parse(rawOutput)
 
                     if (safetyController.isRepeatedAction(history, parsedAction)) {
@@ -129,6 +149,10 @@ class AgentOrchestrator(
 
                     _state.update { it.copy(status = "Executing ${parsedAction.type.value}") }
                     execution = execute(parsedAction, frame)
+                    DbgLog.i(
+                        "Agent execution sessionId=$sessionId step=$step action=${parsedAction.type.value} " +
+                            "success=${execution.success} message=${execution.message}",
+                    )
                     val latency = SystemClock.elapsedRealtime() - startedAt
                     val record = ActionRecord(
                         stepNumber = step,
@@ -160,6 +184,11 @@ class AgentOrchestrator(
                 } catch (parseError: IllegalArgumentException) {
                     invalidJsonCount += 1
                     error = parseError.message ?: "Invalid JSON output."
+                    DbgLog.w(
+                        "Agent invalid json sessionId=$sessionId step=$step count=$invalidJsonCount " +
+                            "error=$error rawPreview=${preview(rawOutput)}",
+                        parseError,
+                    )
                     val latency = SystemClock.elapsedRealtime() - startedAt
                     logStep(sessionId, goal, step, frame, prompt, rawOutput, null, null, latency, error)
                     _state.update {
@@ -178,6 +207,10 @@ class AgentOrchestrator(
                     throw cancelled
                 } catch (throwable: Throwable) {
                     error = throwable.message ?: throwable::class.java.simpleName
+                    DbgLog.e(
+                        "Agent step failed sessionId=$sessionId step=$step error=$error rawPreview=${preview(rawOutput)}",
+                        throwable,
+                    )
                     val latency = SystemClock.elapsedRealtime() - startedAt
                     logStep(sessionId, goal, step, frame, prompt, rawOutput, parsedAction, execution, latency, error)
                     finish(sessionId, "Failed: error", invalidJsonCount, error)
@@ -186,18 +219,36 @@ class AgentOrchestrator(
             }
             finish(sessionId, "Failed: max steps", invalidJsonCount, "Reached max steps.")
         } catch (cancelled: CancellationException) {
+            DbgLog.w("Agent session cancelled sessionId=$sessionId invalidJsonCount=$invalidJsonCount")
             testLogger.completeSession(sessionId, "Stopped", invalidJsonCount, "Stopped by user.")
         }
     }
 
     private suspend fun execute(action: UiAction, frame: ScreenshotFrame): ExecutionResult {
         return when (action.type) {
-            UiActionType.CLICK -> gestureExecutor.click(
-                frame.mapModelXToScreen(action.x ?: 0.0),
-                frame.mapModelYToScreen(action.y ?: 0.0),
-            )
-            UiActionType.TYPE -> gestureExecutor.type(action.text.orEmpty())
-            UiActionType.SWIPE -> gestureExecutor.swipe(action.direction ?: SwipeDirection.UP)
+            UiActionType.CLICK -> {
+                val box = action.boundingBox ?: return ExecutionResult(false, "No bounding box")
+                val centerY = (box[0] + box[2]) / 2.0
+                val centerX = (box[1] + box[3]) / 2.0
+                val screenX = frame.mapModelXToScreen(centerX)
+                val screenY = frame.mapModelYToScreen(centerY)
+                DbgLog.d("Agent click preview x=$screenX y=$screenY durationMs=500")
+                FloatingBarService.showClickMarker(screenX, screenY)
+                delay(500)
+                FloatingBarService.hideClickMarker()
+                gestureExecutor.click(screenX, screenY)
+            }
+            UiActionType.TYPE_TEXT -> {
+                val box = action.boundingBox ?: return ExecutionResult(false, "No bounding box")
+                val centerY = (box[0] + box[2]) / 2.0
+                val centerX = (box[1] + box[3]) / 2.0
+                val screenX = frame.mapModelXToScreen(centerX)
+                val screenY = frame.mapModelYToScreen(centerY)
+                gestureExecutor.typeText(screenX, screenY, action.text.orEmpty())
+            }
+            UiActionType.SCROLL_UP -> gestureExecutor.scrollUp()
+            UiActionType.SCROLL_DOWN -> gestureExecutor.scrollDown()
+            UiActionType.OPEN_APP -> gestureExecutor.openApp(action.appName.orEmpty())
             UiActionType.BACK -> gestureExecutor.back()
             UiActionType.DONE -> ExecutionResult(true, "done()")
         }

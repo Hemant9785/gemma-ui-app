@@ -45,15 +45,33 @@ class GemmaModelManager(private val context: Context) {
                 DbgLog.d("Model initialize skipped: engine already ready")
                 return
             }
-            DbgLog.i("Model initialize requested")
-            val modelFile = copyAssetIfNeeded() ?: run {
+            DbgLog.i("Model initialize requested from external storage")
+            val modelFile = getExternalModelFile() ?: run {
                 _state.value = ModelState.MissingAsset
-                val expected = MODEL_ASSET_CANDIDATES.joinToString { it.assetPath }
-                DbgLog.e("Model missing asset. Expected one of: $expected")
-                error("Missing required asset. Expected one of: $expected")
+                val msg = "Missing required model file in /sdcard/multiturn/model/"
+                DbgLog.e(msg)
+                error(msg)
             }
             initializeEngine(modelFile)
         }
+    }
+
+    private fun getExternalModelFile(): File? {
+        val modelDir = File("/sdcard/multiturn/model")
+        if (!modelDir.exists() || !modelDir.isDirectory) {
+            DbgLog.e("Model directory not found: ${modelDir.absolutePath}")
+            return null
+        }
+        val modelFile = modelDir.listFiles { _, name -> 
+            name.endsWith(".bin") || name.endsWith(".task") || name.endsWith(".litertlm")
+        }?.firstOrNull()
+        
+        if (modelFile == null || !modelFile.exists() || !modelFile.canRead()) {
+            DbgLog.e("Readable model file not found in ${modelDir.absolutePath}")
+            return null
+        }
+        DbgLog.i("Found external model: ${modelFile.absolutePath}")
+        return modelFile
     }
 
     suspend fun generate(request: ModelRequest): String {
@@ -62,7 +80,7 @@ class GemmaModelManager(private val context: Context) {
         return withContext(Dispatchers.IO) {
             DbgLog.i(
                 "Model inference start screenshot=${request.screenshotPath} " +
-                    "promptChars=${request.prompt.length}",
+                    "promptChars=${request.prompt.length} promptPreview=${DbgLog.preview(request.prompt)}",
             )
             var output = ""
             val latencyMs = measureTimeMillis {
@@ -81,7 +99,7 @@ class GemmaModelManager(private val context: Context) {
                 }
             }
             DbgLog.i("Model inference done latencyMs=$latencyMs outputChars=${output.length}")
-            DbgLog.d("Model raw output preview=${output.take(500)}")
+            DbgLog.d("Model raw output preview=${DbgLog.preview(output)}")
             output
         }
     }
@@ -91,46 +109,6 @@ class GemmaModelManager(private val context: Context) {
         engine?.close()
         engine = null
         _state.value = ModelState.NotInitialized
-    }
-
-    private suspend fun copyAssetIfNeeded(): File? = withContext(Dispatchers.IO) {
-        val asset = findAvailableAsset() ?: return@withContext null
-        val outDir = File(context.filesDir, "ui_action_agent/models")
-        outDir.mkdirs()
-        val outFile = File(outDir, asset.fileName)
-        if (outFile.exists() && outFile.length() > 0L) {
-            DbgLog.i("Model asset already copied file=${outFile.absolutePath} bytes=${outFile.length()}")
-            return@withContext outFile
-        }
-
-        _state.value = ModelState.CopyingAsset
-        if (!asset.preferred) {
-            DbgLog.w(
-                "Model using fallback asset ${asset.assetPath}. " +
-                    "Preferred Android asset is $ASSET_PATH.",
-            )
-        }
-        DbgLog.i("Model copying asset=${asset.assetPath} to=${outFile.absolutePath}")
-        val latencyMs = measureTimeMillis {
-            context.assets.open(asset.assetPath).use { input ->
-                FileOutputStream(outFile).use { output ->
-                    input.copyTo(output, bufferSize = 1024 * 1024)
-                }
-            }
-        }
-        DbgLog.i("Model copied asset bytes=${outFile.length()} latencyMs=$latencyMs")
-        outFile
-    }
-
-    private fun findAvailableAsset(): ModelAsset? {
-        return MODEL_ASSET_CANDIDATES.firstOrNull { asset ->
-            runCatching {
-                context.assets.open(asset.assetPath).close()
-                true
-            }.getOrDefault(false)
-        }?.also {
-            DbgLog.i("Model asset found asset=${it.assetPath} preferred=${it.preferred}")
-        }
     }
 
     @OptIn(ExperimentalApi::class)
@@ -188,7 +166,9 @@ class GemmaModelManager(private val context: Context) {
     private fun conversationConfig(): ConversationConfig {
         return ConversationConfig(
             systemInstruction = Contents.of(
-                "You are UIActionAgent. Return only the required JSON action object.",
+                "<|think|>" +
+                    "You are UIActionAgent. Think privately and efficiently before acting. " +
+                    "Return only the required JSON action object in the final answer.",
             ),
             samplerConfig = SamplerConfig(
                 topK = 1,

@@ -1,56 +1,32 @@
 package com.hemant.plannerv1.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.ListAlt
-import androidx.compose.material.icons.filled.PersonSearch
-import androidx.compose.material.icons.filled.ScreenShare
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material3.Button
-import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.hemant.plannerv1.agent.AgentState
 import com.hemant.plannerv1.logging.TestLogger
 import com.hemant.plannerv1.model.ModelState
 import com.hemant.plannerv1.permissions.PermissionSnapshot
 import kotlinx.coroutines.launch
 
-enum class MainTab(
-    val label: String,
-    val icon: ImageVector,
-) {
-    Control("Control", Icons.Default.BugReport),
+enum class MainTab(val label: String, val icon: ImageVector) {
+    Control("Dashboard", Icons.Default.Dashboard),
     Logs("Logs", Icons.Default.ListAlt),
 }
 
@@ -64,6 +40,7 @@ fun MainScreen(
     onRequestOverlay: () -> Unit,
     onRequestScreenCapture: () -> Unit,
     onRequestNotification: () -> Unit,
+    onRequestStorage: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
     onStartFloatingBar: () -> Unit,
     onStopFloatingBar: () -> Unit,
@@ -72,21 +49,41 @@ fun MainScreen(
     modifier: Modifier = Modifier,
 ) {
     var tab by remember { mutableStateOf(MainTab.Control) }
+    
+    val allPermissionsGranted = permissionSnapshot.overlayGranted && 
+                               permissionSnapshot.screenCaptureGranted && 
+                               permissionSnapshot.accessibilityEnabled
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Column {
-                        Text("UIActionAgent")
-                        Text(
-                            text = "PlannerV1 research console",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.primaryContainer,
+                                MaterialTheme.colorScheme.surface
+                            )
                         )
-                    }
-                },
-            )
+                    )
+                    .padding(top = 48.dp, bottom = 16.dp, start = 24.dp, end = 24.dp)
+            ) {
+                Column {
+                    Text(
+                        text = "PlannerV1",
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Agent Console",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         },
         bottomBar = {
             NavigationBar {
@@ -100,6 +97,21 @@ fun MainScreen(
                 }
             }
         },
+        floatingActionButton = {
+            if (tab == MainTab.Control) {
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        if (allPermissionsGranted) onStartFloatingBar()
+                    },
+                    containerColor = if (allPermissionsGranted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = if (allPermissionsGranted) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    icon = { Icon(Icons.Default.RocketLaunch, contentDescription = "Launch Agent") },
+                    text = { Text(if (allPermissionsGranted) "Launch Agent" else "Permissions Required", fontWeight = FontWeight.SemiBold) },
+                    expanded = true
+                )
+            }
+        },
+        floatingActionButtonPosition = FabPosition.Center
     ) { padding ->
         when (tab) {
             MainTab.Control -> ControlScreen(
@@ -112,9 +124,8 @@ fun MainScreen(
                 onRequestOverlay = onRequestOverlay,
                 onRequestScreenCapture = onRequestScreenCapture,
                 onRequestNotification = onRequestNotification,
+                onRequestStorage = onRequestStorage,
                 onOpenAccessibilitySettings = onOpenAccessibilitySettings,
-                onStartFloatingBar = onStartFloatingBar,
-                onStopFloatingBar = onStopFloatingBar,
                 onInitializeModel = onInitializeModel,
                 onMaxStepsChanged = onMaxStepsChanged,
             )
@@ -137,136 +148,157 @@ private fun ControlScreen(
     onRequestOverlay: () -> Unit,
     onRequestScreenCapture: () -> Unit,
     onRequestNotification: () -> Unit,
+    onRequestStorage: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
-    onStartFloatingBar: () -> Unit,
-    onStopFloatingBar: () -> Unit,
     onInitializeModel: suspend () -> Unit,
     onMaxStepsChanged: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
     var maxSteps by remember { mutableIntStateOf(agentState.maxSteps) }
+    
     Column(
         modifier = modifier
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(horizontal = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        PermissionStatusScreen(snapshot = permissionSnapshot)
+        Spacer(modifier = Modifier.height(8.dp))
 
-        ActionGrid(
-            onRequestOverlay = onRequestOverlay,
-            onRequestScreenCapture = onRequestScreenCapture,
-            onRequestNotification = onRequestNotification,
-            onOpenAccessibilitySettings = onOpenAccessibilitySettings,
-            onStartFloatingBar = onStartFloatingBar,
-            onStopFloatingBar = onStopFloatingBar,
-            canStartFloatingBar = permissionSnapshot.overlayGranted,
-        )
-
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Gemma Model", style = MaterialTheme.typography.titleMedium)
-            Text(
-                text = modelState.label(),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (modelState is ModelState.CopyingAsset ||
-                modelState is ModelState.InitializingGpu ||
-                modelState is ModelState.InitializingCpu
-            ) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
-            Button(
-                onClick = { scope.launch { onInitializeModel() } },
-                enabled = modelState !is ModelState.CopyingAsset &&
-                    modelState !is ModelState.InitializingGpu &&
-                    modelState !is ModelState.InitializingCpu,
-            ) {
-                Icon(Icons.Default.Layers, contentDescription = "Initialize model")
-                Text("Initialize Gemma")
-            }
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Agent", style = MaterialTheme.typography.titleMedium)
-            Text(
-                text = agentState.status,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            agentState.lastError?.let {
-                Text(it, color = MaterialTheme.colorScheme.error)
-            }
-            Text("Max steps: $maxSteps")
-            Slider(
-                value = maxSteps.toFloat(),
-                onValueChange = {
-                    maxSteps = it.toInt().coerceIn(1, 10)
-                    onMaxStepsChanged(maxSteps)
-                },
-                valueRange = 1f..10f,
-                steps = 8,
-                enabled = !agentState.isRunning,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = { onStopFloatingBar() },
-                ) {
-                    Icon(Icons.Default.Stop, contentDescription = "Stop floating bar")
-                    Text("Stop Bar")
+        // System Health Card
+        ElevatedCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.HealthAndSafety, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(8.dp))
+                    Text("System Health", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 }
-                Text(
-                    text = "Run commands from the floating bar after permissions are ready.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
+                
+                HorizontalDivider()
+                
+                PermissionRow("Overlay Window", permissionSnapshot.overlayGranted, onRequestOverlay)
+                PermissionRow("Screen Capture", permissionSnapshot.screenCaptureGranted, onRequestScreenCapture)
+                PermissionRow("Accessibility Service", permissionSnapshot.accessibilityEnabled, onOpenAccessibilitySettings)
+                PermissionRow("Notifications", permissionSnapshot.notificationGranted, onRequestNotification)
+                PermissionRow("Storage Access", permissionSnapshot.storageGranted, onRequestStorage)
             }
         }
-        Spacer(Modifier.height(24.dp))
+
+        // Engine Card
+        ElevatedCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+        ) {
+            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Memory, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Gemma Engine", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                }
+                
+                Text(
+                    text = modelState.label(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                
+                if (modelState is ModelState.CopyingAsset ||
+                    modelState is ModelState.InitializingGpu ||
+                    modelState is ModelState.InitializingCpu
+                ) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(50)))
+                }
+                
+                Button(
+                    onClick = { scope.launch { onInitializeModel() } },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = modelState !is ModelState.CopyingAsset &&
+                        modelState !is ModelState.InitializingGpu &&
+                        modelState !is ModelState.InitializingCpu &&
+                        modelState !is ModelState.Ready,
+                ) {
+                    Icon(Icons.Default.PowerSettingsNew, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (modelState is ModelState.Ready) "Engine Ready" else "Initialize Engine")
+                }
+            }
+        }
+
+        // Agent Settings Card
+        ElevatedCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+        ) {
+            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Configuration", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                }
+                
+                Column {
+                    Text("Max Steps: $maxSteps", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    Slider(
+                        value = maxSteps.toFloat(),
+                        onValueChange = {
+                            maxSteps = it.toInt().coerceIn(1, 10)
+                            onMaxStepsChanged(maxSteps)
+                        },
+                        valueRange = 1f..10f,
+                        steps = 8,
+                        enabled = !agentState.isRunning,
+                        colors = SliderDefaults.colors(thumbColor = MaterialTheme.colorScheme.tertiary, activeTrackColor = MaterialTheme.colorScheme.tertiary)
+                    )
+                }
+                
+                if (agentState.lastError != null) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "Error: ${agentState.lastError}",
+                            modifier = Modifier.padding(12.dp),
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(80.dp)) // Padding for FAB
     }
 }
 
 @Composable
-private fun ActionGrid(
-    onRequestOverlay: () -> Unit,
-    onRequestScreenCapture: () -> Unit,
-    onRequestNotification: () -> Unit,
-    onOpenAccessibilitySettings: () -> Unit,
-    onStartFloatingBar: () -> Unit,
-    onStopFloatingBar: () -> Unit,
-    canStartFloatingBar: Boolean,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Controls", style = MaterialTheme.typography.titleMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            Button(onClick = onStartFloatingBar, enabled = canStartFloatingBar, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.BugReport, contentDescription = "Start")
-                Text("Start Bar")
+private fun PermissionRow(label: String, granted: Boolean, onRequest: () -> Unit) {
+    val color = if (granted) Color(0xFF15803D) else MaterialTheme.colorScheme.error
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+        
+        if (granted) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.CheckCircle, contentDescription = "Granted", tint = color, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Ready", color = color, style = MaterialTheme.typography.labelMedium)
             }
-            OutlinedButton(onClick = onStopFloatingBar, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.Stop, contentDescription = "Stop")
-                Text("Stop Bar")
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = onRequestOverlay, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.Layers, contentDescription = "Overlay")
-                Text("Overlay")
-            }
-            OutlinedButton(onClick = onRequestScreenCapture, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.ScreenShare, contentDescription = "Screen capture")
-                Text("Capture")
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = onOpenAccessibilitySettings, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.PersonSearch, contentDescription = "Accessibility")
-                Text("Accessibility")
-            }
-            OutlinedButton(onClick = onRequestNotification, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.ListAlt, contentDescription = "Notifications")
-                Text("Notify")
+        } else {
+            OutlinedButton(
+                onClick = onRequest,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                modifier = Modifier.height(32.dp)
+            ) {
+                Text("Grant", style = MaterialTheme.typography.labelMedium)
             }
         }
     }
@@ -274,12 +306,12 @@ private fun ActionGrid(
 
 private fun ModelState.label(): String {
     return when (this) {
-        ModelState.NotInitialized -> "Not initialized. Required asset: app/src/main/assets/models/gemma-4-E4B-it.litertlm"
-        ModelState.MissingAsset -> "Missing model asset. Add gemma-4-E4B-it.litertlm under app/src/main/assets/models."
+        ModelState.NotInitialized -> "Not initialized. Model asset required."
+        ModelState.MissingAsset -> "Missing model asset (gemma-4-E4B-it.litertlm)."
         ModelState.CopyingAsset -> "Copying bundled model into app-private storage."
         ModelState.InitializingGpu -> "Initializing Gemma with GPU backend."
         ModelState.InitializingCpu -> "GPU failed; initializing Gemma with CPU backend."
-        is ModelState.Ready -> "Ready on $backend: $modelPath"
+        is ModelState.Ready -> "Ready on $backend"
         is ModelState.Error -> message
     }
 }

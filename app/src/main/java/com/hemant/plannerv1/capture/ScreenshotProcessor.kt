@@ -21,11 +21,11 @@ data class ScreenshotFrame(
     val scaleY: Float = originalHeight.toFloat() / modelHeight.toFloat()
 
     fun mapModelXToScreen(x: Double): Int {
-        return (x * scaleX).roundToInt().coerceIn(0, originalWidth - 1)
+        return ((x / 1000.0) * originalWidth).roundToInt().coerceIn(0, originalWidth - 1)
     }
 
     fun mapModelYToScreen(y: Double): Int {
-        return (y * scaleY).roundToInt().coerceIn(0, originalHeight - 1)
+        return ((y / 1000.0) * originalHeight).roundToInt().coerceIn(0, originalHeight - 1)
     }
 }
 
@@ -40,35 +40,16 @@ class ScreenshotProcessor(
         val originalFile = File(dir, "step_${stepNumber}_original.png")
         savePng(bitmap, originalFile)
 
-        val resized = resizeForModel(bitmap)
-        val modelFile = File(dir, "step_${stepNumber}_model.png")
-        savePng(resized, modelFile)
-        val modelWidth = resized.width
-        val modelHeight = resized.height
-
-        if (resized !== bitmap) {
-            resized.recycle()
-        }
-
         return ScreenshotFrame(
             sessionId = sessionId,
             stepNumber = stepNumber,
             originalPath = originalFile.absolutePath,
-            modelPath = modelFile.absolutePath,
+            modelPath = originalFile.absolutePath,
             originalWidth = bitmap.width,
             originalHeight = bitmap.height,
-            modelWidth = max(1, modelWidth),
-            modelHeight = max(1, modelHeight),
+            modelWidth = bitmap.width,
+            modelHeight = bitmap.height,
         )
-    }
-
-    private fun resizeForModel(bitmap: Bitmap): Bitmap {
-        val longest = max(bitmap.width, bitmap.height)
-        if (longest <= maxModelDimension) return bitmap
-        val scale = maxModelDimension.toFloat() / longest.toFloat()
-        val width = max(1, (bitmap.width * scale).roundToInt())
-        val height = max(1, (bitmap.height * scale).roundToInt())
-        return Bitmap.createScaledBitmap(bitmap, width, height, true)
     }
 
     private fun savePng(bitmap: Bitmap, file: File) {

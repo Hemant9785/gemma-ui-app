@@ -10,6 +10,7 @@ import com.hemant.plannerv1.model.ModelInputBuilder
 import com.hemant.plannerv1.model.ModelOutputParser
 import com.hemant.plannerv1.permissions.PermissionManager
 import com.hemant.plannerv1.safety.SafetyController
+import com.hemant.plannerv1.logging.DbgLog
 
 object AppContainer {
     lateinit var appContext: Context
@@ -34,8 +35,12 @@ object AppContainer {
         private set
 
     fun initialize(context: Context) {
-        if (::appContext.isInitialized) return
+        if (::appContext.isInitialized) {
+            DbgLog.d("AppContainer initialize skipped: already initialized")
+            return
+        }
 
+        DbgLog.i("AppContainer initialize start")
         appContext = context.applicationContext
         permissionManager = PermissionManager(appContext)
         screenCaptureManager = ScreenCaptureManager(appContext)
@@ -54,5 +59,6 @@ object AppContainer {
             safetyController = safetyController,
             testLogger = testLogger,
         )
+        DbgLog.i("AppContainer initialize complete")
     }
 }
