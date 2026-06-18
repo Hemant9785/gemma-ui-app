@@ -48,7 +48,7 @@ class GestureExecutor(private val context: Context) {
         return dispatch(path, durationMs = 420, label = "scrollDown()")
     }
 
-    fun openApp(appName: String): ExecutionResult {
+    fun openApp(appName: String, clearTask: Boolean = false): ExecutionResult {
         val pm = context.packageManager
         val launcherIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
             addCategory(android.content.Intent.CATEGORY_LAUNCHER)
@@ -92,10 +92,14 @@ class GestureExecutor(private val context: Context) {
         
         if (bestPackage != null) {
             val intent = pm.getLaunchIntentForPackage(bestPackage)?.apply {
-                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                var flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                if (clearTask) {
+                    flags = flags or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+                }
+                addFlags(flags)
             }
             if (intent != null) {
-                DbgLog.d("Opening app $appName matched $bestPackage with score $bestScore", tag = "ACTION_DBG")
+                DbgLog.d("Opening app $appName matched $bestPackage with score $bestScore clearTask=$clearTask", tag = "ACTION_DBG")
                 context.startActivity(intent)
                 return ExecutionResult(true, "openApp($appName)")
             }

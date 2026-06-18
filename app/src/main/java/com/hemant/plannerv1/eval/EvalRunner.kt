@@ -468,7 +468,7 @@ class EvalRunner(
             }
             UiActionType.SCROLL_UP -> gestureExecutor.scrollUp()
             UiActionType.SCROLL_DOWN -> gestureExecutor.scrollDown()
-            UiActionType.OPEN_APP -> gestureExecutor.openApp(action.appName.orEmpty())
+            UiActionType.OPEN_APP -> gestureExecutor.openApp(action.appName.orEmpty(), clearTask = true)
             UiActionType.WAIT -> ExecutionResult(true, "wait()")
             UiActionType.BACK -> gestureExecutor.back()
             UiActionType.DONE -> ExecutionResult(true, "done()")
