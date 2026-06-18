@@ -79,6 +79,7 @@ class AgentOrchestrator(
         var history = ActionHistory()
         var invalidJsonCount = 0
         var lastError: String? = null
+        val detectedTargetApp = gestureExecutor.detectTargetAppInGoal(goal)
         _state.value = AgentState(
             isRunning = true,
             goal = goal,
@@ -90,13 +91,13 @@ class AgentOrchestrator(
         try {
             for (step in 1..maxSteps) {
                 ensureNotStopped()
-                val packageName = gestureExecutor.currentPackageName()
-                if (safetyController.isPackageBlocked(packageName)) {
+                val appContext = gestureExecutor.currentAppContext()
+                if (safetyController.isAppBlocked(appContext.appName, appContext.packageName)) {
                     finish(
                         sessionId = sessionId,
                         status = "Blocked",
                         invalidJsonCount = invalidJsonCount,
-                        error = "Blocked package: $packageName",
+                        error = "Blocked app: ${appContext.preferredName}",
                     )
                     return
                 }
@@ -123,8 +124,19 @@ class AgentOrchestrator(
                         "Agent step start sessionId=$sessionId step=$step historySize=${history.records.size}",
                     )
                     frame = screenCaptureManager.capture(sessionId, step)
-                    val currentActivity = gestureExecutor.currentPackageName() ?: "unknown"
-                    val request = modelInputBuilder.build(goal, history, step, maxSteps, frame, currentActivity, lastError)
+                    val currentAppContext = gestureExecutor.currentAppContext()
+                    val request = modelInputBuilder.build(
+                        goal = goal,
+                        history = history,
+                        stepNumber = step,
+                        maxSteps = maxSteps,
+                        frame = frame,
+                        currentAppName = currentAppContext.preferredName,
+                        currentPackageName = currentAppContext.packageName,
+                        detectedTargetAppName = detectedTargetApp?.appName,
+                        detectedTargetAppMatch = detectedTargetApp?.matchedText,
+                        lastError = lastError,
+                    )
                     lastError = null // consumed — clear after passing to builder
                     prompt = request.prompt
                     DbgLog.d(

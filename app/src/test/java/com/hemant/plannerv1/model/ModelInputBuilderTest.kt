@@ -26,14 +26,45 @@ class ModelInputBuilderTest {
             stepNumber = 2,
             maxSteps = 10,
             frame = frame,
-            currentActivity = "com.android.chrome.MainActivity"
+            currentAppName = "Chrome",
+            currentPackageName = "com.android.chrome",
         )
 
         assertEquals("/tmp/model.png", request.screenshotPath)
         assertTrue(request.prompt.contains("GOAL: Search weather in Chrome"))
-        assertTrue(request.prompt.contains("Current Activity: com.android.chrome.MainActivity"))
+        assertTrue(request.prompt.contains("Current App: Chrome"))
         assertTrue(request.prompt.contains("Steps done:"))
-        assertTrue(request.prompt.contains("For click, output bounding_box"))
+        assertTrue(request.prompt.contains("For click, return bounding_box"))
         assertTrue(request.prompt.contains("Return JSON only."))
+    }
+
+    @Test
+    fun promptInjectsDetectedTargetAppAsSeparateContext() {
+        val frame = ScreenshotFrame(
+            sessionId = "session",
+            stepNumber = 1,
+            originalPath = "/tmp/original.png",
+            modelPath = "/tmp/model.png",
+            originalWidth = 2400,
+            originalHeight = 1080,
+            modelWidth = 1024,
+            modelHeight = 461,
+        )
+
+        val request = ModelInputBuilder().build(
+            goal = "buy shoes from flipkart",
+            history = ActionHistory(),
+            stepNumber = 1,
+            maxSteps = 10,
+            frame = frame,
+            currentAppName = "Launcher",
+            detectedTargetAppName = "Flipkart",
+            detectedTargetAppMatch = "flipkart",
+        )
+
+        assertTrue(request.prompt.contains("GOAL: buy shoes from flipkart"))
+        assertTrue(request.prompt.contains("Detected target app from user goal:"))
+        assertTrue(request.prompt.contains("- App: Flipkart"))
+        assertTrue(request.prompt.contains("prefer open_app(\"Flipkart\")"))
     }
 }

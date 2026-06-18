@@ -13,10 +13,17 @@ class SafetyControllerTest {
     private val safety = SafetyController()
 
     @Test
-    fun blocksBankingAndPaymentPackages() {
-        assertTrue(safety.isPackageBlocked("com.example.mobilebank"))
-        assertTrue(safety.isPackageBlocked("com.google.android.apps.nbu.paisa.user"))
-        assertFalse(safety.isPackageBlocked("com.google.android.youtube"))
+    fun blocksBankingAndPaymentAppsByAppName() {
+        assertTrue(safety.isAppBlocked("Google Pay", "com.google.android.apps.nbu.paisa.user"))
+        assertTrue(safety.isAppBlocked("PayPal", "com.paypal.android.p2pmobile"))
+        assertFalse(safety.isAppBlocked("YouTube", "com.google.android.youtube"))
+    }
+
+    @Test
+    fun fallsBackToPackageNameWhenAppNameDoesNotMatch() {
+        assertTrue(safety.isAppBlocked("Paisa", "com.google.android.apps.nbu.paisa.user"))
+        assertTrue(safety.isAppBlocked(null, "com.example.mobilebank"))
+        assertFalse(safety.isAppBlocked("YouTube", "com.google.android.youtube"))
     }
 
     @Test

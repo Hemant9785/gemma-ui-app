@@ -18,7 +18,10 @@ class ModelInputBuilder {
         stepNumber: Int,
         maxSteps: Int,
         frame: ScreenshotFrame,
-        currentActivity: String,
+        currentAppName: String,
+        currentPackageName: String? = null,
+        detectedTargetAppName: String? = null,
+        detectedTargetAppMatch: String? = null,
         lastError: String? = null,
     ): ModelRequest {
         val stepsDone = if (history.records.isEmpty()) {
@@ -48,8 +51,37 @@ class ModelInputBuilder {
             }
         }
 
-        val injection = com.hemant.plannerv1.AppContainer.promptInjectionManager.getChecklistForPackage(currentActivity)
+        val promptInjectionManager = runCatching {
+            com.hemant.plannerv1.AppContainer.promptInjectionManager
+        }.getOrNull()
+        val injection = promptInjectionManager?.getChecklistForApp(
+            appName = currentAppName,
+            packageName = currentPackageName,
+        )
         val injectionStr = if (injection != null) "\n$injection" else ""
+
+        val detectedTargetApp = detectedTargetAppName
+            ?.sanitizePromptValue()
+            ?.takeIf { it.isNotBlank() }
+        val detectedTargetMatch = detectedTargetAppMatch
+            ?.sanitizePromptValue()
+            ?.takeIf { it.isNotBlank() }
+            ?: detectedTargetApp
+        val detectedTargetAppContext = if (detectedTargetApp != null) {
+            """
+                Detected target app from user goal:
+                - App: $detectedTargetApp
+                - Exact installed-app-name match: $detectedTargetMatch
+                Instruction: If Current App is not $detectedTargetApp, prefer open_app("$detectedTargetApp") before click, type_text, or scroll actions.
+            """.trimIndent()
+        } else {
+            null
+        }
+        val detectedTargetAppContextStr = if (detectedTargetAppContext != null) {
+            "\n$detectedTargetAppContext"
+        } else {
+            ""
+        }
 
         val errorWarning = if (lastError != null) {
             "\nSYSTEM WARNING: Your previous output failed with error: '$lastError'\nPlease correct your JSON format or action type.\n"
@@ -59,11 +91,6 @@ class ModelInputBuilder {
                 Act like UIActionAgent, an on-device Android UI automation agent.
 
                 Your task is to decide the next single action that best moves toward the user goal, based on the screenshot and context.
-
-                GOAL: $goal
-                Current Activity: $currentActivity
-                Steps done:
-                $stepsDone
 
                 Before choosing an action:
                 1) First analyze the user goal, current screen, and previous actions.
@@ -77,7 +104,6 @@ class ModelInputBuilder {
                 2) Prefer high-level actions over low-level visual clicks.
                 3) Home Screen rule:
                    - If the current screen is the Home Screen or Launcher and the goal requires opening an app, use open_app.
-                   - Example: {"action":"open_app","app_name":"YouTube"}
                    - Do not click app icons from the launcher.
                 4) Failure loop rule:
                    - If the previous step failed, do not repeat the same action.
@@ -100,6 +126,35 @@ class ModelInputBuilder {
                    - Use back only if the current screen is clearly not useful for the goal.
                 11) Completion rule:
                    - Use done only when the goal is fully completed.
+
+                EXAMPLES OF CORRECT OUTPUTS:
+
+                Example 1 (Opening an app from launcher):
+                GOAL: Search for movies in Video App
+                Current App: Launcher
+                Steps done: None.
+                Response: {"thought":"Goal is not complete. We are on the launcher screen, so we should launch Video App.","action":"open_app","bounding_box":null,"text":null,"app_name":"Video App","reason":"Open Video App from launcher","done":false}
+
+                Example 2 (Typing search query):
+                GOAL: Search for beach clothes in Shopping App
+                Current App: Shopping App
+                Steps done: 1. open_app (Shopping App) -> success
+                Response: {"thought":"Goal is not complete. The search bar is visible in Shopping App, so we should type our query.","action":"type_text","bounding_box":[45,60,110,940],"text":"beach clothes","app_name":null,"reason":"Type search query in the search input field","done":false}
+
+                Example 3 (Completing goal):
+                GOAL: Search for beach clothes in Shopping App
+                Current App: Shopping App
+                Steps done:
+                1. open_app (Shopping App) -> success
+                2. type_text (text: 'beach clothes') -> success
+                Response: {"thought":"Goal is complete since the search results for beach clothes are now displayed on screen.","action":"done","bounding_box":null,"text":null,"app_name":null,"reason":"Search results for beach clothes are displayed","done":true}
+
+                CURRENT TASK CONTEXT:
+                GOAL: $goal
+                Current App: $currentAppName
+                $detectedTargetAppContextStr
+                Steps done:
+                $stepsDone
                 $injectionStr
                 $errorWarning
                 Return JSON only. Do not include markdown, comments, or extra text.
@@ -112,7 +167,9 @@ class ModelInputBuilder {
         DbgLog.d(
             "Prompt built goalChars=${goal.length} step=$stepNumber/$maxSteps " +
                 "historySize=${history.records.size} promptChars=${prompt.length} " +
-                "promptInjectionEnabled=${com.hemant.plannerv1.AppContainer.promptInjectionManager.isEnabled} " +
+                "currentAppName=$currentAppName currentPackageName=${currentPackageName ?: "unknown"} " +
+                "detectedTargetApp=${detectedTargetApp ?: "none"} " +
+                "promptInjectionEnabled=${promptInjectionManager?.isEnabled ?: false} " +
                 "promptInjectionLength=${injectionStr.length} " +
                 "promptPreview=${DbgLog.preview(prompt)}",
         )
@@ -121,5 +178,12 @@ class ModelInputBuilder {
             prompt = prompt,
             screenshotPath = frame.modelPath,
         )
+    }
+
+    private fun String.sanitizePromptValue(): String {
+        return replace('\n', ' ')
+            .replace('\r', ' ')
+            .replace(Regex("""\s+"""), " ")
+            .trim()
     }
 }

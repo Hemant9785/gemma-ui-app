@@ -214,6 +214,7 @@ class EvalRunner(
         var finalStatus = "Failed: max steps"
         var invalidJsonCount = 0
         var lastError: String? = null
+        val detectedTargetApp = gestureExecutor.detectTargetAppInGoal(goal)
         val deadline = SystemClock.elapsedRealtime() + goalTimeoutMs
 
         for (step in 1..maxStepsPerGoal) {
@@ -248,7 +249,7 @@ class EvalRunner(
 
                 // 1. Capture screen (not timed)
                 frame = screenCaptureManager.capture(sessionId, step)
-                val currentPkg = gestureExecutor.currentPackageName() ?: "unknown"
+                val currentAppContext = gestureExecutor.currentAppContext()
 
                 // 2. Build prompt (not timed)
                 val request = modelInputBuilder.build(
@@ -257,7 +258,10 @@ class EvalRunner(
                     stepNumber = step,
                     maxSteps = maxStepsPerGoal,
                     frame = frame,
-                    currentActivity = currentPkg,
+                    currentAppName = currentAppContext.preferredName,
+                    currentPackageName = currentAppContext.packageName,
+                    detectedTargetAppName = detectedTargetApp?.appName,
+                    detectedTargetAppMatch = detectedTargetApp?.matchedText,
                     lastError = lastError,
                 )
                 lastError = null // consumed — clear after passing to builder

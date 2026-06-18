@@ -9,6 +9,18 @@ class SafetyController(
     val maxInvalidJson: Int = 2,
     val actionDelayMs: Long = 0L,
 ) {
+    private val blockedAppNameFragments = listOf(
+        "bank",
+        "payment",
+        "wallet",
+        "upi",
+        "paypal",
+        "paytm",
+        "phonepe",
+        "google pay",
+        "gpay",
+    )
+
     private val blockedPackageFragments = listOf(
         "bank",
         "payment",
@@ -21,10 +33,15 @@ class SafetyController(
         "google.android.apps.nbu.paisa",
     )
 
-    fun isPackageBlocked(packageName: String?): Boolean {
-        if (packageName.isNullOrBlank()) return false
-        val normalized = packageName.lowercase()
-        return blockedPackageFragments.any { normalized.contains(it) }
+    fun isAppBlocked(appName: String?, packageName: String?): Boolean {
+        if (matchesBlockedFragment(appName, blockedAppNameFragments)) return true
+        return matchesBlockedFragment(packageName, blockedPackageFragments)
+    }
+
+    private fun matchesBlockedFragment(value: String?, fragments: List<String>): Boolean {
+        val normalized = value?.lowercase()?.trim().orEmpty()
+        if (normalized.isBlank() || normalized == "unknown") return false
+        return fragments.any { normalized.contains(it) }
     }
 
     fun isRepeatedAction(history: ActionHistory, nextAction: UiAction): Boolean {

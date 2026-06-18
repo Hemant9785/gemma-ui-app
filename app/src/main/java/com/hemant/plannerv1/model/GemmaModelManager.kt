@@ -82,6 +82,10 @@ class GemmaModelManager(private val context: Context) {
                 "Model inference start screenshot=${request.screenshotPath} " +
                     "promptChars=${request.prompt.length} promptPreview=${DbgLog.preview(request.prompt)}",
             )
+            DbgLog.d(
+                "FINAL PROMPT TO MODEL screenshot=${request.screenshotPath} chars=${request.prompt.length}\n${request.prompt}",
+                tag = "MODEL_DBG",
+            )
             var output = ""
             val latencyMs = measureTimeMillis {
                 output = activeEngine.createConversation(conversationConfig()).use { conversation ->
@@ -172,13 +176,16 @@ class GemmaModelManager(private val context: Context) {
         return ConversationConfig(
             systemInstruction = Contents.of(
                 "<|think|>" +
-                    "You are UIActionAgent. Think privately and efficiently before acting. " +
-                    "Return only the required JSON action object in the final answer.",
+                    "You are UIActionAgent, an on-device Android UI automation agent. " +
+                    "You MUST strictly follow these rules:\n" +
+                    "1. If on the Home Screen / Launcher and the goal requires opening an app, use 'open_app' action. Do NOT click app icons visually.\n" +
+                    "2. Prefer high-level actions over visual clicks.\n" +
+                    "3. Return only the required JSON action object in the final answer.",
             ),
             samplerConfig = SamplerConfig(
                 topK = 1,
                 topP = 0.95,
-                temperature = 0.1,
+                temperature = 0.0,
             ),
         )
     }

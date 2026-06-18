@@ -17,14 +17,16 @@ class PromptInjectionManager(context: Context) {
             _isEnabled = value
         }
 
-    fun getChecklistForPackage(currentActivity: String): String? {
+    fun getChecklistForApp(appName: String?, packageName: String?): String? {
         if (!isEnabled) return null
 
-        val lowerActivity = currentActivity.lowercase()
-        val instructions = when {
+        val workflow = workflowForAppName(appName)
+            ?: workflowForPackageName(packageName)
+            ?: return null
+        val instructions = when (workflow) {
 
             // ── Gmail ─────────────────────────────────────────────────────────
-            lowerActivity.contains("com.google.android.gm") -> """
+            AppWorkflow.GMAIL -> """
                 APP WORKFLOW — Gmail (follow exactly):
 
                 SENDING AN EMAIL:
@@ -43,7 +45,7 @@ class PromptInjectionManager(context: Context) {
             """.trimIndent()
 
             // ── WhatsApp ──────────────────────────────────────────────────────
-            lowerActivity.contains("com.whatsapp") -> """
+            AppWorkflow.WHATSAPP -> """
                 APP WORKFLOW — WhatsApp (follow exactly):
 
                 SENDING A MESSAGE:
@@ -71,7 +73,7 @@ class PromptInjectionManager(context: Context) {
             """.trimIndent()
 
             // ── Microsoft Outlook ─────────────────────────────────────────────
-            lowerActivity.contains("com.microsoft.office.outlook") -> """
+            AppWorkflow.OUTLOOK -> """
                 APP WORKFLOW — Outlook (follow exactly):
 
                 SENDING AN EMAIL:
@@ -87,10 +89,36 @@ class PromptInjectionManager(context: Context) {
 
                 STOP RULE: As soon as the email is sent (compose window closed) or search results are visible, output done=true. Do not click anything else.
             """.trimIndent()
-
-            else -> return null
         }
 
         return "\nAPP-SPECIFIC INSTRUCTIONS (treat as highest priority — override general strategy if needed):\n$instructions"
     }
+
+    private fun workflowForAppName(appName: String?): AppWorkflow? {
+        val normalized = appName?.lowercase()?.trim().orEmpty()
+        if (normalized.isBlank() || normalized == "unknown") return null
+        return when {
+            normalized.contains("gmail") -> AppWorkflow.GMAIL
+            normalized.contains("whatsapp") -> AppWorkflow.WHATSAPP
+            normalized.contains("outlook") -> AppWorkflow.OUTLOOK
+            else -> null
+        }
+    }
+
+    private fun workflowForPackageName(packageName: String?): AppWorkflow? {
+        val normalized = packageName?.lowercase()?.trim().orEmpty()
+        if (normalized.isBlank() || normalized == "unknown") return null
+        return when {
+            normalized.contains("com.google.android.gm") -> AppWorkflow.GMAIL
+            normalized.contains("com.whatsapp") -> AppWorkflow.WHATSAPP
+            normalized.contains("com.microsoft.office.outlook") -> AppWorkflow.OUTLOOK
+            else -> null
+        }
+    }
+}
+
+private enum class AppWorkflow {
+    GMAIL,
+    WHATSAPP,
+    OUTLOOK,
 }
