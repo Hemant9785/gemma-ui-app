@@ -310,11 +310,12 @@ class AgentOrchestrator(
             }
             UiActionType.TYPE_TEXT -> {
                 val box = action.boundingBox ?: return ExecutionResult(false, "No bounding box")
-                val centerY = (box[0] + box[2]) / 2.0
-                val centerX = (box[1] + box[3]) / 2.0
-                val screenX = frame.mapModelXToScreen(centerX)
-                val screenY = frame.mapModelYToScreen(centerY)
-                gestureExecutor.typeText(screenX, screenY, action.text.orEmpty())
+                val top = frame.mapModelYToScreen(box[0])
+                val left = frame.mapModelXToScreen(box[1])
+                val bottom = frame.mapModelYToScreen(box[2])
+                val right = frame.mapModelXToScreen(box[3])
+                val targetRect = android.graphics.Rect(left, top, right, bottom)
+                gestureExecutor.typeText(targetRect, action.text.orEmpty())
             }
             UiActionType.SCROLL_UP -> gestureExecutor.scrollUp()
             UiActionType.SCROLL_DOWN -> gestureExecutor.scrollDown()

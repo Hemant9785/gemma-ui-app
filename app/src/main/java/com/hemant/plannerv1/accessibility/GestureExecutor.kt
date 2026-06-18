@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.Context
 import android.graphics.Path
+import android.graphics.Rect
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import com.hemant.plannerv1.agent.AppTargetDetector
@@ -212,6 +213,35 @@ class GestureExecutor(private val context: Context) {
         return ExecutionResult(success, if (success) "pressHome()" else "Home action failed.")
     }
 
+    suspend fun typeText(targetRect: Rect, text: String): ExecutionResult {
+        val normalizedTargetRect = normalizedRect(targetRect)
+        val centerX = normalizedTargetRect.centerX()
+        val centerY = normalizedTargetRect.centerY()
+        DbgLog.d(
+            "Executing typeText targetRect=${normalizedTargetRect.toShortString()} centerX=$centerX centerY=$centerY text: $text",
+            tag = "ACTION_DBG",
+        )
+
+        val primaryResult = typeText(centerX, centerY, text)
+        if (primaryResult.success) {
+            return primaryResult
+        }
+
+        DbgLog.w(
+            "typeText primary point path failed, trying targetRect fallback. " +
+                "targetRect=${normalizedTargetRect.toShortString()} error=${primaryResult.message}",
+            tag = "ACTION_DBG",
+        )
+        val fallbackResult = typeTextByTargetRect(normalizedTargetRect, text)
+        if (fallbackResult.success) {
+            return fallbackResult
+        }
+        return ExecutionResult(
+            false,
+            "Primary type failed: ${primaryResult.message}; targetRect fallback failed: ${fallbackResult.message}",
+        )
+    }
+
     suspend fun typeText(x: Int, y: Int, text: String): ExecutionResult {
         DbgLog.d("Executing typeText at x=$x, y=$y with text: $text", tag = "ACTION_DBG")
         val service = serviceOrNull() ?: return ExecutionResult(false, "Accessibility service disconnected.")
@@ -283,46 +313,126 @@ class GestureExecutor(private val context: Context) {
                 lastTargetNode = targetNode
                 targetNode.refresh()
                 DbgLog.d("typeText attempt $i found target node: class=${targetNode.className}, isEditable=${targetNode.isEditable}", tag = "ACTION_DBG")
-                
-                var current: AccessibilityNodeInfo? = targetNode
-                while (current != null && !success) {
-                    val arguments = Bundle().apply {
-                        putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-                    }
-                    success = current.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-                    if (!success) {
-                        current = current.parent
-                    }
-                }
-                
-                if (!success) {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    val clip = android.content.ClipData.newPlainText("text", text)
-                    clipboard.setPrimaryClip(clip)
-                    
-                    current = targetNode
-                    while (current != null && !success) {
-                        current.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-                        success = current.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-                        if (!success) {
-                            current = current.parent
-                        }
-                    }
-                }
+
+                success = setTextOrPaste(targetNode, text)
             }
             
             if (success) {
                 DbgLog.d("typeText successful on attempt $i, submitting enter", tag = "ACTION_DBG")
-                kotlinx.coroutines.delay(300)
-                if (android.os.Build.VERSION.SDK_INT >= 33) {
-                    lastTargetNode?.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
-                }
+                submitEnter(lastTargetNode)
                 return ExecutionResult(true, "typeText(${text.length} chars)")
             }
         }
         
         DbgLog.e("typeText failed after 10 attempts. Last node class=${lastTargetNode?.className}", tag = "ACTION_DBG")
         return ExecutionResult(false, "Found input node but SET_TEXT and PASTE failed.")
+    }
+
+    private suspend fun typeTextByTargetRect(targetRect: Rect, text: String): ExecutionResult {
+        val service = serviceOrNull()
+            ?: return ExecutionResult(false, "Accessibility service disconnected.")
+        val candidates = mutableListOf<EditableTargetCandidate>()
+
+        for (window in service.windows) {
+            for (node in findEditableNodes(window.root)) {
+                val bounds = Rect()
+                node.getBoundsInScreen(bounds)
+                val overlapArea = intersectionArea(targetRect, bounds)
+                if (overlapArea > 0L) {
+                    candidates += EditableTargetCandidate(
+                        node = node,
+                        bounds = bounds,
+                        overlapArea = overlapArea,
+                    )
+                }
+            }
+        }
+
+        DbgLog.d(
+            "typeText targetRect fallback candidates=${candidates.size} targetRect=${targetRect.toShortString()}",
+            tag = "ACTION_DBG",
+        )
+
+        val best = candidates.maxByOrNull { it.overlapArea }
+            ?: return ExecutionResult(false, "No editable node overlaps targetRect.")
+
+        DbgLog.i(
+            "typeText targetRect fallback selected bounds=${best.bounds.toShortString()} " +
+                "overlapArea=${best.overlapArea} class=${best.node.className}",
+            tag = "ACTION_DBG",
+        )
+
+        best.node.refresh()
+        best.node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        best.node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        kotlinx.coroutines.delay(200)
+
+        return if (setTextOrPaste(best.node, text)) {
+            DbgLog.d("typeText targetRect fallback successful, submitting enter", tag = "ACTION_DBG")
+            submitEnter(best.node)
+            ExecutionResult(true, "typeText(${text.length} chars, targetRect fallback)")
+        } else {
+            ExecutionResult(false, "Selected editable node but SET_TEXT and PASTE failed.")
+        }
+    }
+
+    private fun setTextOrPaste(targetNode: AccessibilityNodeInfo, text: String): Boolean {
+        var success = false
+        var current: AccessibilityNodeInfo? = targetNode
+        while (current != null && !success) {
+            val arguments = Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+            }
+            success = current.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+            if (!success) {
+                current = current.parent
+            }
+        }
+
+        if (!success) {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = android.content.ClipData.newPlainText("text", text)
+            clipboard.setPrimaryClip(clip)
+
+            current = targetNode
+            while (current != null && !success) {
+                current.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                success = current.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+                if (!success) {
+                    current = current.parent
+                }
+            }
+        }
+
+        return success
+    }
+
+    private suspend fun submitEnter(targetNode: AccessibilityNodeInfo?) {
+        kotlinx.coroutines.delay(300)
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            val success = targetNode?.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id) == true
+            DbgLog.d("typeText submit enter success=$success", tag = "ACTION_DBG")
+        }
+    }
+
+    private fun intersectionArea(first: Rect, second: Rect): Long {
+        val left = maxOf(first.left, second.left)
+        val top = maxOf(first.top, second.top)
+        val right = minOf(first.right, second.right)
+        val bottom = minOf(first.bottom, second.bottom)
+        val width = right - left
+        val height = bottom - top
+        if (width <= 0 || height <= 0) return 0L
+        return width.toLong() * height.toLong()
+    }
+
+    private fun normalizedRect(rect: Rect): Rect {
+        return Rect(
+            minOf(rect.left, rect.right),
+            minOf(rect.top, rect.bottom),
+            maxOf(rect.left, rect.right),
+            maxOf(rect.top, rect.bottom),
+        )
     }
 
     private fun findEditableNodes(root: AccessibilityNodeInfo?): List<AccessibilityNodeInfo> {
@@ -391,4 +501,10 @@ class GestureExecutor(private val context: Context) {
     }
 
     private fun serviceOrNull(): UiActionAccessibilityService? = UiActionAccessibilityService.current
+
+    private data class EditableTargetCandidate(
+        val node: AccessibilityNodeInfo,
+        val bounds: Rect,
+        val overlapArea: Long,
+    )
 }

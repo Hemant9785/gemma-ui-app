@@ -111,8 +111,10 @@ class ModelInputBuilder {
                 5) Search rule:
                    - If a search bar/input field is directly visible, use type_text.
                    - If only a search icon is visible, click the search icon first.
-                   - After successfully typing a search query, choose the most relevant visible search result.
-                   - If no relevant result is visible, use scroll_down.
+                   - After successfully typing a search query, inspect product images and search result descriptions closely.
+                   - Match results to the user's final goal by checking category, brand, and exact details.
+                   - Ignore ads or sponsored products unless truly relevant.
+                   - If no strong matching result is visible, use scroll_down to find a better match.
                 6) Click rule:
                    - For click, return bounding_box as [ymin, xmin, ymax, xmax] in 0-1000 scale.
                    - The center of the box will be clicked.
