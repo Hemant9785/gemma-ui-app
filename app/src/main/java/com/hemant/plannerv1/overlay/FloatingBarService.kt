@@ -247,24 +247,40 @@ class FloatingBarService : LifecycleService(), SavedStateRegistryOwner, ViewMode
             }
             
             this@FloatingBarService.lifecycleScope.launch {
-                AppContainer.agentOrchestrator.state.collect { state ->
-                    val isRunning = state.isRunning
-                    val hasFocusableFlag = (params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) != 0
-                    
-                    if (isRunning && !hasFocusableFlag) {
-                        params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        windowManager.updateViewLayout(this@apply, params)
-                        DbgLog.d("FloatingBarService added FLAG_NOT_FOCUSABLE (agent running)")
-                    } else if (!isRunning && hasFocusableFlag) {
-                        params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-                        windowManager.updateViewLayout(this@apply, params)
-                        DbgLog.d("FloatingBarService removed FLAG_NOT_FOCUSABLE (agent stopped)")
+                launch {
+                    AppContainer.agentOrchestrator.state.collect {
+                        updateFocusableFlag(params, this@apply)
+                    }
+                }
+                launch {
+                    AppContainer.evalRunner.state.collect {
+                        updateFocusableFlag(params, this@apply)
                     }
                 }
             }
         }
         windowManager.addView(view, params)
         overlayView = view
+    }
+
+    private fun updateFocusableFlag(params: WindowManager.LayoutParams, view: View) {
+        val isRunning = AppContainer.agentOrchestrator.state.value.isRunning ||
+                AppContainer.evalRunner.state.value.isRunning
+        val hasFocusableFlag = (params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) != 0
+        
+        if (isRunning && !hasFocusableFlag) {
+            params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+            if (view.isAttachedToWindow) {
+                windowManager.updateViewLayout(view, params)
+            }
+            DbgLog.d("FloatingBarService added FLAG_NOT_FOCUSABLE")
+        } else if (!isRunning && hasFocusableFlag) {
+            params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+            if (view.isAttachedToWindow) {
+                windowManager.updateViewLayout(view, params)
+            }
+            DbgLog.d("FloatingBarService removed FLAG_NOT_FOCUSABLE")
+        }
     }
 
     private fun createChannel() {

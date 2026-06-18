@@ -50,8 +50,25 @@ import com.hemant.plannerv1.ui.theme.PlannerV1Theme
 fun FloatingBarView(onClose: () -> Unit, onDrag: (Float, Float) -> Unit = { _, _ -> }) {
     PlannerV1Theme {
         val agentState by AppContainer.agentOrchestrator.state.collectAsState()
+        val evalState by AppContainer.evalRunner.state.collectAsState()
+
+        val isRunning = agentState.isRunning || evalState.isRunning
+        val statusText = if (evalState.isRunning) evalState.currentStatus else agentState.status
+        val currentStep = if (evalState.isRunning) evalState.currentStep else agentState.currentStep
+        val maxSteps = if (evalState.isRunning) evalState.maxStepsPerGoal else agentState.maxSteps
+        
         var goal by remember { mutableStateOf(agentState.goal) }
         var isExpanded by remember { mutableStateOf(false) }
+
+        val displayedGoal = if (evalState.isRunning) {
+            "Goal ${evalState.currentGoalNumber}/${evalState.totalGoals} | Step ${evalState.currentStep} | ${evalState.currentGoalText}"
+        } else if (agentState.isRunning) {
+            "Step ${agentState.currentStep}/${agentState.maxSteps} | ${agentState.goal}"
+        } else {
+            goal
+        }
+
+        val lastError = if (evalState.isRunning || evalState.lastError != null) evalState.lastError else agentState.lastError
 
         Surface(
             modifier = Modifier
@@ -78,15 +95,15 @@ fun FloatingBarView(onClose: () -> Unit, onDrag: (Float, Float) -> Unit = { _, _
                         modifier = Modifier
                             .size(10.dp)
                             .clip(CircleShape)
-                            .background(if (agentState.isRunning) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                            .background(if (isRunning) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
                     )
                     
                     // Sleek Text Field
                     BasicTextField(
-                        value = goal,
+                        value = if (isRunning) displayedGoal else goal,
                         onValueChange = { goal = it },
                         singleLine = true,
-                        enabled = !agentState.isRunning,
+                        enabled = !isRunning,
                         textStyle = TextStyle(
                             color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 16.sp
@@ -94,7 +111,7 @@ fun FloatingBarView(onClose: () -> Unit, onDrag: (Float, Float) -> Unit = { _, _
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         modifier = Modifier.weight(1f),
                         decorationBox = { innerTextField ->
-                            if (goal.isEmpty()) {
+                            if (goal.isEmpty() && !isRunning) {
                                 Text(
                                     text = "Enter command...",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
@@ -118,7 +135,7 @@ fun FloatingBarView(onClose: () -> Unit, onDrag: (Float, Float) -> Unit = { _, _
                     }
 
                     // Compact Actions
-                    if (!agentState.isRunning) {
+                    if (!isRunning) {
                         IconButton(
                             onClick = { AppContainer.agentOrchestrator.start(goal) },
                             enabled = goal.isNotBlank(),
@@ -132,7 +149,10 @@ fun FloatingBarView(onClose: () -> Unit, onDrag: (Float, Float) -> Unit = { _, _
                         }
                     } else {
                         IconButton(
-                            onClick = { AppContainer.agentOrchestrator.stop() },
+                            onClick = {
+                                AppContainer.agentOrchestrator.stop()
+                                AppContainer.evalRunner.stop()
+                            },
                             modifier = Modifier.size(36.dp),
                             colors = IconButtonDefaults.iconButtonColors(
                                 containerColor = MaterialTheme.colorScheme.errorContainer,
@@ -146,7 +166,11 @@ fun FloatingBarView(onClose: () -> Unit, onDrag: (Float, Float) -> Unit = { _, _
                     Spacer(Modifier.width(4.dp))
                     
                     IconButton(
-                        onClick = onClose,
+                        onClick = {
+                            AppContainer.agentOrchestrator.stop()
+                            AppContainer.evalRunner.stop()
+                            onClose()
+                        },
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(20.dp))
@@ -168,20 +192,20 @@ fun FloatingBarView(onClose: () -> Unit, onDrag: (Float, Float) -> Unit = { _, _
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Step: ${agentState.currentStep} / ${agentState.maxSteps}",
+                                text = "Step: $currentStep / $maxSteps",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = agentState.status,
+                                text = statusText,
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
 
                         val lastRecord = agentState.history.records.lastOrNull()
-                        if (lastRecord != null) {
+                        if (lastRecord != null && !evalState.isRunning) {
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
                                 color = MaterialTheme.colorScheme.secondaryContainer,
@@ -211,9 +235,9 @@ fun FloatingBarView(onClose: () -> Unit, onDrag: (Float, Float) -> Unit = { _, _
                             }
                         }
                         
-                        if (agentState.lastError != null) {
+                        if (lastError != null) {
                             Text(
-                                text = "Error: ${agentState.lastError}",
+                                text = "Error: $lastError",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error
                             )

@@ -136,6 +136,10 @@ class MainActivity : ComponentActivity() {
                     onStartBenchmark = {
                         val uri = selectedGoalsUri.value ?: return@MainScreen
                         val goalsFile = copyUriToCache(uri) ?: return@MainScreen
+                        ContextCompat.startForegroundService(
+                            this,
+                            FloatingBarService.startIntent(this),
+                        )
                         AppContainer.evalRunner.start(goalsFile)
                     },
                     onStopBenchmark = {

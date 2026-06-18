@@ -189,7 +189,13 @@ class AgentOrchestrator(
                     )
                     delay(300)
 
-                    execution = execute(parsedAction, frame)
+                    try {
+                        FloatingBarService.setCaptureVisibility(hidden = true)
+                        delay(50)
+                        execution = execute(parsedAction, frame)
+                    } finally {
+                        FloatingBarService.setCaptureVisibility(hidden = false)
+                    }
                     DbgLog.i(
                         "Agent execution sessionId=$sessionId step=$step action=${parsedAction.type.value} " +
                             "success=${execution.success} message=${execution.message}",

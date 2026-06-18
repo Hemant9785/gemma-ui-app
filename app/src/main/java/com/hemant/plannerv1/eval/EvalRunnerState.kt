@@ -17,6 +17,7 @@ data class EvalRunnerState(
     val lastError: String? = null,
     /** Snapshot of results accumulated so far (grows as goals complete). */
     val results: List<EvalGoalResult> = emptyList(),
+    val maxStepsPerGoal: Int = 20,
 ) {
     val progress: Float
         get() = if (totalGoals == 0) 0f else completedGoals.toFloat() / totalGoals.toFloat()

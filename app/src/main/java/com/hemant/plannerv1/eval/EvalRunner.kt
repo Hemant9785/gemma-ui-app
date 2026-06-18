@@ -16,6 +16,7 @@ import com.hemant.plannerv1.model.GemmaModelManager
 import com.hemant.plannerv1.model.ModelInputBuilder
 import com.hemant.plannerv1.model.ModelOutputParser
 import com.hemant.plannerv1.safety.SafetyController
+import com.hemant.plannerv1.overlay.FloatingBarService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -57,7 +58,7 @@ class EvalRunner(
     private val outputDir: File,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val _state = MutableStateFlow(EvalRunnerState())
+    private val _state = MutableStateFlow(EvalRunnerState(maxStepsPerGoal = maxStepsPerGoal))
     val state: StateFlow<EvalRunnerState> = _state.asStateFlow()
 
     private var job: Job? = null
@@ -102,6 +103,7 @@ class EvalRunner(
             isRunning = true,
             totalGoals = goals.size,
             currentStatus = "Starting",
+            maxStepsPerGoal = maxStepsPerGoal,
         )
 
         try {
@@ -119,7 +121,14 @@ class EvalRunner(
                 }
 
                 // ── HARDCODED HOME RESET — model does not see or execute this ──
-                val homeResult = gestureExecutor.pressHome()
+                val homeResult: ExecutionResult
+                try {
+                    FloatingBarService.setCaptureVisibility(hidden = true)
+                    delay(50)
+                    homeResult = gestureExecutor.pressHome()
+                } finally {
+                    FloatingBarService.setCaptureVisibility(hidden = false)
+                }
                 if (!homeResult.success) {
                     DbgLog.e("EvalRunner home reset failed for goal $goalNumber: ${homeResult.message}")
                     val failedResult = EvalGoalResult(
@@ -315,7 +324,41 @@ class EvalRunner(
                 _state.update { it.copy(currentStatus = "Goal $goalNumber | Step $step — Executing ${parsedAction.type.value}") }
                 // frame is always non-null here: capture() above either succeeds or throws,
                 // in which case the inner catch block handles it before we reach this line.
-                val execution = execute(parsedAction, frame!!)
+                var markerX: Int? = null
+                var markerY: Int? = null
+                var markerBounds: android.graphics.Rect? = null
+                val box = parsedAction.boundingBox
+                if (box != null && box.size >= 4) {
+                    val top = frame!!.mapModelYToScreen(box[0])
+                    val left = frame.mapModelXToScreen(box[1])
+                    val bottom = frame.mapModelYToScreen(box[2])
+                    val right = frame.mapModelXToScreen(box[3])
+                    markerBounds = android.graphics.Rect(left, top, right, bottom)
+                    markerX = (left + right) / 2
+                    markerY = (top + bottom) / 2
+                }
+                val actionText = when (parsedAction.type) {
+                    UiActionType.OPEN_APP -> "open_app(${parsedAction.appName ?: ""})"
+                    UiActionType.TYPE_TEXT -> "type_text(${parsedAction.text ?: ""})"
+                    else -> parsedAction.type.value
+                }
+                FloatingBarService.showActionMarker(
+                    text = actionText,
+                    x = markerX,
+                    y = markerY,
+                    bounds = markerBounds
+                )
+                delay(300)
+
+                val execution: ExecutionResult
+                try {
+                    FloatingBarService.setCaptureVisibility(hidden = true)
+                    delay(50)
+                    execution = execute(parsedAction, frame!!)
+                } finally {
+                    FloatingBarService.setCaptureVisibility(hidden = false)
+                    FloatingBarService.hideActionMarker()
+                }
 
                 // 9. Update history
                 history = history.append(
