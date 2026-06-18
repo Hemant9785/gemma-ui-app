@@ -10,8 +10,10 @@ import com.hemant.plannerv1.model.ModelInputBuilder
 import com.hemant.plannerv1.model.ModelOutputParser
 import com.hemant.plannerv1.permissions.PermissionManager
 import com.hemant.plannerv1.safety.SafetyController
+import com.hemant.plannerv1.eval.EvalRunner
 import com.hemant.plannerv1.logging.DbgLog
 import com.hemant.plannerv1.model.PromptInjectionManager
+import java.io.File
 
 object AppContainer {
     lateinit var appContext: Context
@@ -36,6 +38,8 @@ object AppContainer {
         private set
     lateinit var promptInjectionManager: PromptInjectionManager
         private set
+    lateinit var evalRunner: EvalRunner
+        private set
 
     fun initialize(context: Context) {
         if (::appContext.isInitialized) {
@@ -54,6 +58,18 @@ object AppContainer {
         safetyController = SafetyController()
         testLogger = TestLogger(appContext)
         promptInjectionManager = PromptInjectionManager(appContext)
+        evalRunner = EvalRunner(
+            gestureExecutor = gestureExecutor,
+            screenCaptureManager = screenCaptureManager,
+            modelManager = modelManager,
+            modelInputBuilder = modelInputBuilder,
+            modelOutputParser = modelOutputParser,
+            safetyController = safetyController,
+            testLogger = testLogger,
+            maxStepsPerGoal = 20,
+            goalTimeoutMs = 5 * 60 * 1000L,
+            outputDir = File(appContext.getExternalFilesDir(null), "eval_reports"),
+        )
         agentOrchestrator = AgentOrchestrator(
             screenCaptureManager = screenCaptureManager,
             modelInputBuilder = modelInputBuilder,

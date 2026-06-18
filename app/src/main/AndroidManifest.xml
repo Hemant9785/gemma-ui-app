@@ -26,6 +26,23 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.PlannerV1">
+
+        <!--
+            Required for LiteRT GPU backend (Backend.GPU()).
+
+            libOpenCL.so     — The OpenCL vendor driver used by LiteRT-LM for GPU inference on
+                               Qualcomm Adreno, ARM Mali, Imagination PowerVR, and other Android
+                               GPUs. Without this declaration Android's security sandbox will
+                               block access to the vendor driver, silently causing GPU init to fail.
+            libvndksupport.so — Allows the app process to cross the vendor/system partition
+                               boundary to dlopen VNDK libs such as OpenCL at runtime.
+
+            Both are required="false" so the APK installs on devices without GPU/OpenCL support;
+            those devices will automatically fall through to the CPU backend.
+        -->
+        <uses-native-library android:name="libOpenCL.so"     android:required="false" />
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -33,7 +50,6 @@
             android:theme="@style/Theme.PlannerV1">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>

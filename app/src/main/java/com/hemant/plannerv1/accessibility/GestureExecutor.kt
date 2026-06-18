@@ -112,6 +112,19 @@ class GestureExecutor(private val context: Context) {
         return ExecutionResult(success, if (success) "back()" else "Back action failed.")
     }
 
+    /**
+     * Presses the Home button via the Accessibility Service global action.
+     * Used exclusively by [com.hemant.plannerv1.eval.EvalRunner] to reset to the launcher
+     * before each evaluation goal. The model agent never calls or sees this method.
+     */
+    fun pressHome(): ExecutionResult {
+        val service = serviceOrNull()
+            ?: return ExecutionResult(false, "Accessibility service is not connected.")
+        val success = service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+        DbgLog.d("Executing pressHome action, success=$success", tag = "ACTION_DBG")
+        return ExecutionResult(success, if (success) "pressHome()" else "Home action failed.")
+    }
+
     suspend fun typeText(x: Int, y: Int, text: String): ExecutionResult {
         DbgLog.d("Executing typeText at x=$x, y=$y with text: $text", tag = "ACTION_DBG")
         val service = serviceOrNull() ?: return ExecutionResult(false, "Accessibility service disconnected.")

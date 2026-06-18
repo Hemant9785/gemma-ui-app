@@ -78,6 +78,7 @@ class AgentOrchestrator(
         DbgLog.i("Agent session start sessionId=$sessionId goalChars=${goal.length} maxSteps=$maxSteps")
         var history = ActionHistory()
         var invalidJsonCount = 0
+        var lastError: String? = null
         _state.value = AgentState(
             isRunning = true,
             goal = goal,
@@ -123,7 +124,8 @@ class AgentOrchestrator(
                     )
                     frame = screenCaptureManager.capture(sessionId, step)
                     val currentActivity = gestureExecutor.currentPackageName() ?: "unknown"
-                    val request = modelInputBuilder.build(goal, history, step, maxSteps, frame, currentActivity)
+                    val request = modelInputBuilder.build(goal, history, step, maxSteps, frame, currentActivity, lastError)
+                    lastError = null // consumed — clear after passing to builder
                     prompt = request.prompt
                     DbgLog.d(
                         "Agent prompt ready sessionId=$sessionId step=$step promptChars=${prompt?.length} " +
@@ -139,7 +141,19 @@ class AgentOrchestrator(
                     DbgLog.d("FULL OUTPUT:\n$rawOutput", tag = "MODEL_DBG")
                     parsedAction = modelOutputParser.parse(rawOutput)
 
-                    if (safetyController.isRepeatedAction(history, parsedAction)) {
+                    // ── Scroll-repeat: execute but inject feedback, do NOT stop ──────────
+                    if (safetyController.isRepeatedScroll(history, parsedAction)) {
+                        DbgLog.w("Repeated scroll detected at step=$step — executing and injecting feedback")
+                        lastError = "You have scrolled twice in a row. " +
+                            "Scrolling again is unlikely to help. " +
+                            "Please try a different action: click a visible element, " +
+                            "use open_app, type_text, back, or done."
+                        // still execute the scroll so the screen actually moves
+                    }
+
+                    // ── Hard stop: non-scroll identical repeated action ───────────────────
+                    if (!safetyController.isRepeatedScroll(history, parsedAction) &&
+                        safetyController.isRepeatedAction(history, parsedAction)) {
                         error = "Repeated identical action: ${parsedAction.signature()}"
                         val latency = SystemClock.elapsedRealtime() - startedAt
                         logStep(sessionId, goal, step, frame, prompt, rawOutput, parsedAction, null, latency, error)
@@ -205,6 +219,7 @@ class AgentOrchestrator(
                     }
                     if (!execution.success) {
                         DbgLog.w("Action failed, continuing to next step for recovery. error=${execution.message}")
+                        lastError = execution.message
                         delay(safetyController.actionDelayMs)
                         FloatingBarService.hideActionMarker()
                         continue
