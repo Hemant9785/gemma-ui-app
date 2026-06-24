@@ -9,6 +9,10 @@ class SafetyController(
     val maxInvalidJson: Int = 2,
     val actionDelayMs: Long = 0L,
 ) {
+    fun hasExhaustedInvalidJsonRetries(consecutiveFailureCount: Int): Boolean {
+        return consecutiveFailureCount > maxInvalidJson
+    }
+
     private val blockedAppNameFragments = listOf(
         "bank",
         "payment",

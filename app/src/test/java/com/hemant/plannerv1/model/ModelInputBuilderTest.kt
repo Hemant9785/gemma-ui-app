@@ -35,6 +35,7 @@ class ModelInputBuilderTest {
         assertTrue(request.prompt.contains("Current App: Chrome"))
         assertTrue(request.prompt.contains("Steps done:"))
         assertTrue(request.prompt.contains("For click, return bounding_box"))
+        assertTrue(request.prompt.contains("\"thought\" and \"reason\" are optional"))
         assertTrue(request.prompt.contains("Return JSON only."))
     }
 
@@ -66,5 +67,33 @@ class ModelInputBuilderTest {
         assertTrue(request.prompt.contains("Detected target app from user goal:"))
         assertTrue(request.prompt.contains("- App: Flipkart"))
         assertTrue(request.prompt.contains("prefer open_app(\"Flipkart\")"))
+    }
+
+    @Test
+    fun promptIncludesPreviousParserErrorAsCorrectiveFeedback() {
+        val frame = ScreenshotFrame(
+            sessionId = "session",
+            stepNumber = 2,
+            originalPath = "/tmp/original.png",
+            modelPath = "/tmp/model.png",
+            originalWidth = 2400,
+            originalHeight = 1080,
+            modelWidth = 1024,
+            modelHeight = 461,
+        )
+
+        val request = ModelInputBuilder().build(
+            goal = "Search for YouTube",
+            history = ActionHistory(),
+            stepNumber = 2,
+            maxSteps = 10,
+            frame = frame,
+            currentAppName = "Play Store",
+            lastError = "type_text requires non-empty text.",
+        )
+
+        assertTrue(request.prompt.contains("PARSER FEEDBACK FROM THE PREVIOUS MODEL ATTEMPT"))
+        assertTrue(request.prompt.contains("type_text requires non-empty text."))
+        assertTrue(request.prompt.contains("Retry the same UI step now"))
     }
 }

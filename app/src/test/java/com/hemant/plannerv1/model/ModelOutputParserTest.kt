@@ -2,7 +2,10 @@ package com.hemant.plannerv1.model
 
 import com.hemant.plannerv1.agent.UiActionType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ModelOutputParserTest {
@@ -91,28 +94,68 @@ class ModelOutputParserTest {
     }
 
     @Test
-    fun rejectsBackWithText() {
+    fun ignoresFieldsThatAreIrrelevantToBack() {
+        val action = parser.parse(
+            """{"action":"back","text":"oops","app_name":"ignored","done":true}""",
+        )
+
+        assertEquals(UiActionType.BACK, action.type)
+        assertNull(action.text)
+        assertNull(action.appName)
+        assertFalse(action.done)
+    }
+
+    @Test
+    fun ignoresFieldsThatAreIrrelevantToDone() {
+        val action = parser.parse(
+            """{"action":"done","bounding_box":[0,0,10,10],"text":"ignored","app_name":"ignored","done":false}""",
+        )
+
+        assertEquals(UiActionType.DONE, action.type)
+        assertNull(action.boundingBox)
+        assertNull(action.text)
+        assertNull(action.appName)
+        assertTrue(action.done)
+    }
+
+    @Test
+    fun ignoresUnknownKeysAndOptionalMetadata() {
+        val action = parser.parse(
+            """{"action":"done","thought":{"unexpected":"shape"},"reason":42,"extra":1}""",
+        )
+
+        assertEquals(UiActionType.DONE, action.type)
+        assertEquals("", action.reason)
+        assertTrue(action.done)
+    }
+
+    @Test
+    fun typeTextRequiresOnlyItsExecutionFields() {
+        val action = parser.parse(
+            """{"action":"type_text","bounding_box":[10,20,30,40],"text":"YouTube","app_name":"Play Store","done":true}""",
+        )
+
+        assertEquals(UiActionType.TYPE_TEXT, action.type)
+        assertEquals("YouTube", action.text)
+        assertNull(action.appName)
+        assertFalse(action.done)
+        assertEquals("", action.reason)
+    }
+
+    @Test
+    fun rejectsOutOfRangeBoundingBox() {
         assertThrows(IllegalArgumentException::class.java) {
             parser.parse(
-                """{"action":"back","text":"oops","reason":"go back","done":false}""",
+                """{"action":"click","bounding_box":[0,0,1001,10]}""",
             )
         }
     }
 
     @Test
-    fun rejectsDoneWithCoordinates() {
+    fun rejectsIncorrectBoundingBoxOrdering() {
         assertThrows(IllegalArgumentException::class.java) {
             parser.parse(
-                """{"action":"done","bounding_box":[0,0,10,10],"reason":"finished","done":true}""",
-            )
-        }
-    }
-
-    @Test
-    fun rejectsExtraKeys() {
-        assertThrows(IllegalArgumentException::class.java) {
-            parser.parse(
-                """{"action":"done","reason":"complete","done":true,"extra":1}""",
+                """{"action":"type_text","bounding_box":[30,20,10,40],"text":"query"}""",
             )
         }
     }

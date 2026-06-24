@@ -78,6 +78,7 @@ class AgentOrchestrator(
         DbgLog.i("Agent session start sessionId=$sessionId goalChars=${goal.length} maxSteps=$maxSteps")
         var history = ActionHistory()
         var invalidJsonCount = 0
+        var consecutiveInvalidJsonCount = 0
         var lastError: String? = null
         val detectedTargetApp = gestureExecutor.detectTargetAppInGoal(goal)
         _state.value = AgentState(
@@ -89,7 +90,8 @@ class AgentOrchestrator(
         )
 
         try {
-            for (step in 1..maxSteps) {
+            var step = 1
+            while (step <= maxSteps) {
                 ensureNotStopped()
                 val appContext = gestureExecutor.currentAppContext()
                 if (safetyController.isAppBlocked(appContext.appName, appContext.packageName)) {
@@ -152,6 +154,7 @@ class AgentOrchestrator(
                     )
                     DbgLog.d("FULL OUTPUT:\n$rawOutput", tag = "MODEL_DBG")
                     parsedAction = modelOutputParser.parse(rawOutput)
+                    consecutiveInvalidJsonCount = 0
 
                     // ── Scroll-repeat: execute but inject feedback, do NOT stop ──────────
                     if (safetyController.isRepeatedScroll(history, parsedAction)) {
@@ -240,6 +243,7 @@ class AgentOrchestrator(
                         lastError = execution.message
                         delay(safetyController.actionDelayMs)
                         FloatingBarService.hideActionMarker()
+                        step += 1
                         continue
                     }
                     val settleDelay = when (parsedAction.type) {
@@ -255,11 +259,15 @@ class AgentOrchestrator(
                     DbgLog.d("Waiting $finalDelay ms for action ${parsedAction.type.value} to settle...")
                     delay(finalDelay)
                     FloatingBarService.hideActionMarker()
+                    step += 1
                 } catch (parseError: IllegalArgumentException) {
                     invalidJsonCount += 1
+                    consecutiveInvalidJsonCount += 1
                     error = parseError.message ?: "Invalid JSON output."
+                    lastError = error
                     DbgLog.w(
-                        "Agent invalid json sessionId=$sessionId step=$step count=$invalidJsonCount " +
+                        "Agent invalid json sessionId=$sessionId step=$step total=$invalidJsonCount " +
+                            "consecutive=$consecutiveInvalidJsonCount " +
                             "error=$error rawPreview=${preview(rawOutput)}",
                         parseError,
                     )
@@ -272,10 +280,14 @@ class AgentOrchestrator(
                             lastError = error,
                         )
                     }
-                    if (invalidJsonCount >= safetyController.maxInvalidJson) {
+                    if (safetyController.hasExhaustedInvalidJsonRetries(consecutiveInvalidJsonCount)) {
                         finish(sessionId, "Failed: invalid JSON", invalidJsonCount, error)
                         return
                     }
+                    DbgLog.i(
+                        "Retrying agent step=$step with parser feedback " +
+                            "retry=$consecutiveInvalidJsonCount/${safetyController.maxInvalidJson}",
+                    )
                     delay(safetyController.actionDelayMs)
                 } catch (cancelled: CancellationException) {
                     throw cancelled

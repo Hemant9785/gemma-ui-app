@@ -213,11 +213,13 @@ class EvalRunner(
         var history = ActionHistory()
         var finalStatus = "Failed: max steps"
         var invalidJsonCount = 0
+        var consecutiveInvalidJsonCount = 0
         var lastError: String? = null
         val detectedTargetApp = gestureExecutor.detectTargetAppInGoal(goal)
         val deadline = SystemClock.elapsedRealtime() + goalTimeoutMs
 
-        for (step in 1..maxStepsPerGoal) {
+        var step = 1
+        while (step <= maxStepsPerGoal) {
 
             // ── Timeout guard ─────────────────────────────────────────────
             if (SystemClock.elapsedRealtime() > deadline) {
@@ -243,6 +245,7 @@ class EvalRunner(
 
             var frame: ScreenshotFrame? = null
             var rawOutput: String? = null
+            var prompt: String? = null
 
             try {
                 DbgLog.d("EvalRunner goal=$goalNumber step=$step")
@@ -264,6 +267,7 @@ class EvalRunner(
                     detectedTargetAppMatch = detectedTargetApp?.matchedText,
                     lastError = lastError,
                 )
+                prompt = request.prompt
                 lastError = null // consumed — clear after passing to builder
 
                 // 3. Approximate INPUT tokens — chars/4 heuristic
@@ -290,6 +294,7 @@ class EvalRunner(
 
                 // 6. Parse output (not timed)
                 val parsedAction = modelOutputParser.parse(rawOutput!!)
+                consecutiveInvalidJsonCount = 0
                 reasoning = parsedAction.reason
                 actionPerformed = formatAction(parsedAction)
                 done = parsedAction.done || parsedAction.type == UiActionType.DONE
@@ -319,7 +324,7 @@ class EvalRunner(
                         done = false,
                         error = stepError,
                     )
-                    logStep(sessionId, goal, step, frame, request.prompt, rawOutput, parsedAction, null, inferenceMs, stepError)
+                    logStep(sessionId, goal, step, frame, prompt, rawOutput, parsedAction, null, inferenceMs, stepError)
                     testLogger.completeSession(sessionId, "Failed: repeated action", invalidJsonCount, stepError)
                     return buildResult(goalNumber, goal, "Failed: repeated action", steps)
                 }
@@ -376,15 +381,20 @@ class EvalRunner(
                 )
 
                 // 10. Persist to existing JSONL infrastructure (unchanged)
-                logStep(sessionId, goal, step, frame, request.prompt, rawOutput, parsedAction, execution, inferenceMs, null)
+                logStep(sessionId, goal, step, frame, prompt, rawOutput, parsedAction, execution, inferenceMs, null)
 
             } catch (parseError: IllegalArgumentException) {
                 // Bad JSON from model — count against threshold
                 invalidJsonCount++
+                consecutiveInvalidJsonCount++
                 stepError = parseError.message ?: "Invalid JSON output"
+                lastError = stepError
                 actionPerformed = "PARSE_ERROR"
-                DbgLog.w("EvalRunner invalid JSON goal=$goalNumber step=$step count=$invalidJsonCount error=$stepError")
-                logStep(sessionId, goal, step, frame, null, rawOutput, null, null, inferenceMs, stepError)
+                DbgLog.w(
+                    "EvalRunner invalid JSON goal=$goalNumber step=$step total=$invalidJsonCount " +
+                        "consecutive=$consecutiveInvalidJsonCount error=$stepError",
+                )
+                logStep(sessionId, goal, step, frame, prompt, rawOutput, null, null, inferenceMs, stepError)
 
                 steps += EvalStepRecord(
                     stepNumber = step,
@@ -397,12 +407,16 @@ class EvalRunner(
                     error = stepError,
                 )
 
-                if (invalidJsonCount >= safetyController.maxInvalidJson) {
+                if (safetyController.hasExhaustedInvalidJsonRetries(consecutiveInvalidJsonCount)) {
                     finalStatus = "Failed: invalid JSON"
                     testLogger.completeSession(sessionId, finalStatus, invalidJsonCount, stepError)
                     return buildResult(goalNumber, goal, finalStatus, steps)
                 }
 
+                DbgLog.i(
+                    "Retrying eval goal=$goalNumber step=$step with parser feedback " +
+                        "retry=$consecutiveInvalidJsonCount/${safetyController.maxInvalidJson}",
+                )
                 delay(safetyController.actionDelayMs) // not counted in latency
                 continue
 
@@ -448,6 +462,7 @@ class EvalRunner(
 
             // Settle delay — mirrors AgentOrchestrator's logic; NOT counted in latency
             delay(settleDelayFor(history.records.lastOrNull()?.action))
+            step++
         }
 
         testLogger.completeSession(sessionId, finalStatus, invalidJsonCount, steps.lastOrNull()?.error)

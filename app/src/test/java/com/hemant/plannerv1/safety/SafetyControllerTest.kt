@@ -50,4 +50,13 @@ class SafetyControllerTest {
 
         assertTrue(safety.isRepeatedAction(history, click))
     }
+
+    @Test
+    fun allowsConfiguredInvalidJsonFeedbackRetriesBeforeStopping() {
+        val safetyWithTwoRetries = SafetyController(maxInvalidJson = 2)
+
+        assertFalse(safetyWithTwoRetries.hasExhaustedInvalidJsonRetries(1))
+        assertFalse(safetyWithTwoRetries.hasExhaustedInvalidJsonRetries(2))
+        assertTrue(safetyWithTwoRetries.hasExhaustedInvalidJsonRetries(3))
+    }
 }

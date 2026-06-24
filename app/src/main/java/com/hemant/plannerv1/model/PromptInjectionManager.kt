@@ -158,14 +158,16 @@ class PromptInjectionManager(context: Context) {
             """.trimIndent()
 
             AppWorkflow.PLAY_STORE -> """
-                APP WORKFLOW - Google Play Store (follow exactly):
+                APP WORKFLOW GUIDANCE - Google Play Store:
 
                 SEARCHING / INSTALLING APPS:
-                1. Tap the search bar at the top.
-                2. Type the requested app/game name. Enter is pressed automatically after typing.
-                3. Choose the exact app result by checking app name, icon, developer/publisher, rating, and category.
-                4. Ignore ads or sponsored results unless they exactly match the requested app.
-                5. If the exact result is not visible, scroll down and keep comparing names, icons, and developers.
+                1. Inspect the current screenshot first. Do not assume a search field exists at the top of the screen.
+                2. If an editable search field such as "Search apps & games" is visibly present, use type_text with that field's exact bounding box.
+                3. If no editable search field is visible but a Search tab or magnifying-glass icon is visible in the bottom navigation, tap that bottom Search control first.
+                4. After the search screen opens, use type_text only when the editable search field is actually visible. Enter is pressed automatically after typing.
+                5. Choose the exact app result by checking app name, icon, developer/publisher, rating, and category.
+                6. If the exact result is not visible, scroll down and keep comparing names, icons, and developers.
+                - Never click or type into a top-screen area merely because a search field is expected there.
 
                 INSTALL / OPEN / UPDATE:
                 - To install: open the exact app detail page, then tap Install.
@@ -177,11 +179,18 @@ class PromptInjectionManager(context: Context) {
                 - For broad goals like "download a puzzle game", compare visible app names, icons, ratings, and categories before choosing.
                 - Prefer organic exact matches over sponsored placements.
 
-                STOP RULE: Output done=true once the requested app detail page is open, or once Install/Open/Update has been tapped when the goal asks for that action.
+                STOP RULE: For a search goal, stop when the requested search results are visible. For an app-detail goal, stop when the exact app detail page is open. For Install/Open/Update goals, stop after the requested action has been triggered and is visibly confirmed.
             """.trimIndent()
         }
 
-        return "\nAPP-SPECIFIC INSTRUCTIONS (treat as highest priority — override general strategy if needed):\n$instructions"
+        return """
+            APP-SPECIFIC GUIDANCE:
+            Use these hints only when they match the current screenshot and action history.
+            Never assume an element exists because it is mentioned here.
+            The visible UI and previous action results take priority.
+            HIGH-PRIORITY RULE: Ignore Sponsored/Ad/Promoted results; prefer relevant organic results unless the goal explicitly asks for ads.
+            $instructions
+        """.trimIndent()
     }
 
     private fun workflowForAppName(appName: String?): AppWorkflow? {
