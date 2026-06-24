@@ -331,7 +331,15 @@ class AgentOrchestrator(
             }
             UiActionType.SCROLL_UP -> gestureExecutor.scrollUp()
             UiActionType.SCROLL_DOWN -> gestureExecutor.scrollDown()
-            UiActionType.OPEN_APP -> gestureExecutor.openApp(action.appName.orEmpty())
+            UiActionType.OPEN_APP -> {
+                val requestedApp = action.appName.orEmpty()
+                val target = gestureExecutor.resolveLaunchableApp(requestedApp)
+                    ?: return ExecutionResult(false, "App not found or cannot be launched: $requestedApp")
+                if (safetyController.isAppBlocked(target.label, target.packageName)) {
+                    return ExecutionResult(false, "Blocked app: ${target.label} (${target.packageName})")
+                }
+                gestureExecutor.openApp(target)
+            }
             UiActionType.WAIT -> ExecutionResult(true, "waiting")
             UiActionType.BACK -> gestureExecutor.back()
             UiActionType.DONE -> ExecutionResult(true, "done()")

@@ -27,9 +27,9 @@ import com.hemant.plannerv1.agent.AgentState
 import com.hemant.plannerv1.eval.EvalGoalResult
 import com.hemant.plannerv1.eval.EvalRunnerState
 import com.hemant.plannerv1.logging.TestLogger
+import com.hemant.plannerv1.model.BackendConfig
 import com.hemant.plannerv1.model.ModelState
 import com.hemant.plannerv1.permissions.PermissionSnapshot
-import kotlinx.coroutines.launch
 
 enum class MainTab(val label: String, val icon: ImageVector) {
     Control("Dashboard", Icons.Default.Dashboard),
@@ -53,7 +53,8 @@ fun MainScreen(
     onOpenAccessibilitySettings: () -> Unit,
     onStartFloatingBar: () -> Unit,
     onStopFloatingBar: () -> Unit,
-    onInitializeModel: suspend () -> Unit,
+    onInitializeModel: (BackendConfig.BackendType) -> Unit,
+    onReleaseModel: () -> Unit,
     onMaxStepsChanged: (Int) -> Unit,
     onPickGoalsFile: () -> Unit,
     onStartBenchmark: () -> Unit,
@@ -139,6 +140,7 @@ fun MainScreen(
                 onRequestStorage = onRequestStorage,
                 onOpenAccessibilitySettings = onOpenAccessibilitySettings,
                 onInitializeModel = onInitializeModel,
+                onReleaseModel = onReleaseModel,
                 onMaxStepsChanged = onMaxStepsChanged,
             )
             MainTab.Benchmark -> BenchmarkScreen(
@@ -572,11 +574,11 @@ private fun ControlScreen(
     onRequestNotification: () -> Unit,
     onRequestStorage: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
-    onInitializeModel: suspend () -> Unit,
+    onInitializeModel: (BackendConfig.BackendType) -> Unit,
+    onReleaseModel: () -> Unit,
     onMaxStepsChanged: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val scope = rememberCoroutineScope()
     var maxSteps by remember { mutableIntStateOf(agentState.maxSteps) }
 
     Column(
@@ -635,18 +637,98 @@ private fun ControlScreen(
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(50)))
                 }
 
-                Button(
-                    onClick = { scope.launch { onInitializeModel() } },
+                // ── Backend toggle ───────────────────────────────────────────
+                val engineBusy = modelState is ModelState.CopyingAsset ||
+                    modelState is ModelState.InitializingGpu ||
+                    modelState is ModelState.InitializingCpu
+                val engineReady = modelState is ModelState.Ready
+
+                var useLlamaCpp by remember {
+                    mutableStateOf(
+                        com.hemant.plannerv1.AppContainer.backendConfig.activeBackend ==
+                            BackendConfig.BackendType.LLAMACPP
+                    )
+                }
+
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    enabled = modelState !is ModelState.CopyingAsset &&
-                        modelState !is ModelState.InitializingGpu &&
-                        modelState !is ModelState.InitializingCpu &&
-                        modelState !is ModelState.Ready,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Default.PowerSettingsNew, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (modelState is ModelState.Ready) "Engine Ready" else "Initialize Engine")
+                    Switch(
+                        checked = useLlamaCpp,
+                        onCheckedChange = { checked ->
+                            useLlamaCpp = checked
+                            com.hemant.plannerv1.AppContainer.backendConfig.activeBackend =
+                                if (checked) BackendConfig.BackendType.LLAMACPP
+                                else BackendConfig.BackendType.LITERTLM
+                        },
+                        enabled = !engineBusy && !engineReady,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.primary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primaryContainer,
+                        ),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = if (useLlamaCpp) "llama.cpp GGUF backend" else "LiteRT-LM backend",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Text(
+                            text = if (useLlamaCpp)
+                                "Loads gemma-4-E4B-it-Q4_K_M.gguf; vision if mmproj is present"
+                            else
+                                "Loads .litertlm · multimodal (GPU/CPU)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                if (engineReady) {
+                    Text(
+                        text = "⚠ Release the engine before switching backends.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                // ── Initialize / Release buttons ─────────────────────────────
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Button(
+                        onClick = {
+                            val selectedBackend =
+                                if (useLlamaCpp) BackendConfig.BackendType.LLAMACPP
+                                else BackendConfig.BackendType.LITERTLM
+                            onInitializeModel(selectedBackend)
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = !engineBusy && !engineReady,
+                    ) {
+                        Icon(Icons.Default.PowerSettingsNew, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (engineReady) "Engine Ready" else "Initialize")
+                    }
+
+                    if (engineReady) {
+                        OutlinedButton(
+                            onClick = onReleaseModel,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error,
+                            ),
+                        ) {
+                            Icon(Icons.Default.Stop, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Release")
+                        }
+                    }
                 }
             }
         }
@@ -737,12 +819,12 @@ private fun PermissionRow(label: String, granted: Boolean, onRequest: () -> Unit
 
 private fun ModelState.label(): String {
     return when (this) {
-        ModelState.NotInitialized -> "Not initialized. Model asset required."
-        ModelState.MissingAsset -> "Missing model asset (gemma-4-E4B-it.litertlm)."
-        ModelState.CopyingAsset -> "Copying bundled model into app-private storage."
-        ModelState.InitializingGpu -> "Initializing Gemma with GPU backend."
-        ModelState.InitializingCpu -> "GPU failed; initializing Gemma with CPU backend."
-        is ModelState.Ready -> "Ready on $backend"
-        is ModelState.Error -> message
+        ModelState.NotInitialized  -> "Not initialized. Tap Initialize to load the model."
+        ModelState.MissingAsset   -> "Missing model file in /sdcard/multiturn/model/ (.litertlm or .gguf)."
+        ModelState.CopyingAsset   -> "Copying bundled model into app-private storage."
+        ModelState.InitializingGpu -> "Initializing engine with GPU backend…"
+        ModelState.InitializingCpu -> "Initializing engine with CPU backend…"
+        is ModelState.Ready       -> "Ready on $backend"
+        is ModelState.Error       -> message
     }
 }

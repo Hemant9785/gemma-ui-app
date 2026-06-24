@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.hemant.plannerv1.capture.ScreenCaptureForegroundService
 import com.hemant.plannerv1.logging.DbgLog
 import com.hemant.plannerv1.overlay.FloatingBarService
@@ -17,6 +18,7 @@ import com.hemant.plannerv1.ui.MainScreen
 import com.hemant.plannerv1.ui.theme.PlannerV1Theme
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 
@@ -124,8 +126,25 @@ class MainActivity : ComponentActivity() {
                         stopService(FloatingBarService.stopIntent(this))
                         AppContainer.agentOrchestrator.stop()
                     },
-                    onInitializeModel = {
-                        AppContainer.modelManager.initialize()
+                    onInitializeModel = { selectedBackend ->
+                        DbgLog.i("Initialize model requested selectedBackend=$selectedBackend")
+                        AppContainer.backendConfig.activeBackend = selectedBackend
+                        lifecycleScope.launch {
+                            runCatching {
+                                AppContainer.modelManager.initialize()
+                            }.onFailure { throwable ->
+                                DbgLog.e("Initialize model failed: ${throwable.message}", throwable)
+                            }
+                        }
+                    },
+                    onReleaseModel = {
+                        lifecycleScope.launch {
+                            runCatching {
+                                AppContainer.modelManager.release()
+                            }.onFailure { throwable ->
+                                DbgLog.e("Release model failed: ${throwable.message}", throwable)
+                            }
+                        }
                     },
                     onMaxStepsChanged = {
                         AppContainer.agentOrchestrator.setMaxSteps(it)

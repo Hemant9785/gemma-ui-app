@@ -5,6 +5,7 @@ import com.hemant.plannerv1.accessibility.GestureExecutor
 import com.hemant.plannerv1.agent.AgentOrchestrator
 import com.hemant.plannerv1.capture.ScreenCaptureManager
 import com.hemant.plannerv1.logging.TestLogger
+import com.hemant.plannerv1.model.BackendConfig
 import com.hemant.plannerv1.model.GemmaModelManager
 import com.hemant.plannerv1.model.ModelInputBuilder
 import com.hemant.plannerv1.model.ModelOutputParser
@@ -23,6 +24,8 @@ object AppContainer {
     lateinit var screenCaptureManager: ScreenCaptureManager
         private set
     lateinit var gestureExecutor: GestureExecutor
+        private set
+    lateinit var backendConfig: BackendConfig
         private set
     lateinit var modelManager: GemmaModelManager
         private set
@@ -52,7 +55,8 @@ object AppContainer {
         permissionManager = PermissionManager(appContext)
         screenCaptureManager = ScreenCaptureManager(appContext)
         gestureExecutor = GestureExecutor(appContext)
-        modelManager = GemmaModelManager(appContext)
+        backendConfig = BackendConfig(appContext)
+        modelManager = GemmaModelManager(appContext, backendConfig)
         modelInputBuilder = ModelInputBuilder()
         modelOutputParser = ModelOutputParser()
         safetyController = SafetyController()

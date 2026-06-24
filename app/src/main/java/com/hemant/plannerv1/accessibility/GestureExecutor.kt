@@ -29,6 +29,14 @@ data class CurrentAppContext(
     }
 }
 
+data class AppLaunchTarget(
+    val query: String,
+    val label: String,
+    val packageName: String,
+    val score: Int,
+    val matchSource: String,
+)
+
 class GestureExecutor(private val context: Context) {
     fun currentPackageName(): String? {
         return serviceOrNull()?.rootInActiveWindow?.packageName?.toString()
@@ -114,6 +122,16 @@ class GestureExecutor(private val context: Context) {
             return ExecutionResult(false, "App name is empty.")
         }
 
+        val target = resolveLaunchableApp(query)
+            ?: return ExecutionResult(false, "App not found or cannot be launched: $query")
+
+        return openApp(target, clearTask)
+    }
+
+    fun resolveLaunchableApp(appName: String): AppLaunchTarget? {
+        val query = appName.trim()
+        if (query.isBlank()) return null
+
         val pm = context.packageManager
         val launcherIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
             addCategory(android.content.Intent.CATEGORY_LAUNCHER)
@@ -122,6 +140,7 @@ class GestureExecutor(private val context: Context) {
 
         var bestScore = 0
         var bestPackage: String? = null
+        var bestLabel: String? = null
         var matchSource = "app label"
 
         for (info in activities) {
@@ -132,40 +151,56 @@ class GestureExecutor(private val context: Context) {
             if (score > bestScore) {
                 bestScore = score
                 bestPackage = pkg
+                bestLabel = label
             }
         }
 
         if (bestScore == 0) {
             matchSource = "package name"
             for (info in activities) {
+                val label = info.loadLabel(pm).toString()
                 val pkg = info.activityInfo.packageName
                 val score = scoreAppNameMatch(query, pkg)
                 if (score > bestScore) {
                     bestScore = score
                     bestPackage = pkg
+                    bestLabel = label
                 }
             }
         }
 
-        if (bestPackage != null) {
-            val intent = pm.getLaunchIntentForPackage(bestPackage)?.apply {
-                var flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                if (clearTask) {
-                    flags = flags or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
-                }
-                addFlags(flags)
+        val packageName = bestPackage ?: return null
+        val label = bestLabel ?: packageName
+        return AppLaunchTarget(
+            query = query,
+            label = label,
+            packageName = packageName,
+            score = bestScore,
+            matchSource = matchSource,
+        )
+    }
+
+    fun openApp(target: AppLaunchTarget, clearTask: Boolean = false): ExecutionResult {
+        val pm = context.packageManager
+        val intent = pm.getLaunchIntentForPackage(target.packageName)?.apply {
+            var flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+            if (clearTask) {
+                flags = flags or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
             }
-            if (intent != null) {
-                DbgLog.d(
-                    "Opening app $query matched $bestPackage with score $bestScore source=$matchSource clearTask=$clearTask",
-                    tag = "ACTION_DBG",
-                )
-                context.startActivity(intent)
-                return ExecutionResult(true, "openApp($query)")
-            }
+            addFlags(flags)
+        }
+        if (intent != null) {
+            DbgLog.d(
+                "Opening app ${target.query} matched ${target.packageName} " +
+                    "label=${target.label} with score ${target.score} " +
+                    "source=${target.matchSource} clearTask=$clearTask",
+                tag = "ACTION_DBG",
+            )
+            context.startActivity(intent)
+            return ExecutionResult(true, "openApp(${target.query})")
         }
 
-        return ExecutionResult(false, "App not found or cannot be launched: $query")
+        return ExecutionResult(false, "App not found or cannot be launched: ${target.query}")
     }
 
     private fun scoreAppNameMatch(query: String, candidate: String?): Int {
