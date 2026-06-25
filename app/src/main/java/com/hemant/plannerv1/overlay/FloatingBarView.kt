@@ -226,7 +226,7 @@ fun FloatingBarView(onClose: () -> Unit, onDrag: (Float, Float) -> Unit = { _, _
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = "Latency: ${lastRecord.latencyMs} ms",
+                                        text = "Model latency: ${lastRecord.latencyMs} ms",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                                         fontWeight = FontWeight.Bold

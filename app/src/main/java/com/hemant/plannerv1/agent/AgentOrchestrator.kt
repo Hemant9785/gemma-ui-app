@@ -1,6 +1,5 @@
 package com.hemant.plannerv1.agent
 
-import android.os.SystemClock
 import com.hemant.plannerv1.accessibility.GestureExecutor
 import com.hemant.plannerv1.capture.ScreenCaptureManager
 import com.hemant.plannerv1.capture.ScreenshotFrame
@@ -27,6 +26,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.system.measureTimeMillis
 
 class AgentOrchestrator(
     private val screenCaptureManager: ScreenCaptureManager,
@@ -148,13 +148,13 @@ class AgentOrchestrator(
                     )
                 }
 
-                val startedAt = SystemClock.elapsedRealtime()
                 var frame: ScreenshotFrame? = null
                 var prompt: String? = null
                 var rawOutput: String? = null
                 var parsedAction: UiAction? = null
                 var execution: ExecutionResult? = null
                 var error: String? = null
+                var inferenceMs = 0L
 
                 try {
                     DbgLog.d(
@@ -182,13 +182,16 @@ class AgentOrchestrator(
                     )
                     DbgLog.d("FULL PROMPT:\n$prompt", tag = "MODEL_DBG")
                     _state.update { it.copy(status = "Running Gemma") }
-                    rawOutput = modelManager.generate(request)
+                    rawOutput = ""
+                    inferenceMs = measureTimeMillis {
+                        rawOutput = modelManager.generate(request)
+                    }
                     DbgLog.d(
                         "Agent model output sessionId=$sessionId step=$step rawChars=${rawOutput?.length} " +
                             "rawPreview=${preview(rawOutput)}",
                     )
                     DbgLog.d("FULL OUTPUT:\n$rawOutput", tag = "MODEL_DBG")
-                    parsedAction = modelOutputParser.parse(rawOutput)
+                    parsedAction = modelOutputParser.parse(rawOutput ?: "")
                     consecutiveInvalidJsonCount = 0
 
                     // ── Scroll-repeat: execute but inject feedback, do NOT stop ──────────
@@ -205,8 +208,7 @@ class AgentOrchestrator(
                     if (!safetyController.isRepeatedScroll(history, parsedAction) &&
                         safetyController.isRepeatedAction(history, parsedAction)) {
                         error = "Repeated identical action: ${parsedAction.signature()}"
-                        val latency = SystemClock.elapsedRealtime() - startedAt
-                        logStep(sessionId, goal, step, frame, prompt, rawOutput, parsedAction, null, latency, error)
+                        logStep(sessionId, goal, step, frame, prompt, rawOutput, parsedAction, null, inferenceMs, error)
                         finish(sessionId, "Failed: repeated action", invalidJsonCount, error)
                         return
                     }
@@ -250,16 +252,15 @@ class AgentOrchestrator(
                         "Agent execution sessionId=$sessionId step=$step action=${parsedAction.type.value} " +
                             "success=${execution.success} message=${execution.message}",
                     )
-                    val latency = SystemClock.elapsedRealtime() - startedAt
                     val record = ActionRecord(
                         stepNumber = step,
                         action = parsedAction,
                         executionResult = execution,
                         screenshotPath = frame.originalPath,
-                        latencyMs = latency,
+                        latencyMs = inferenceMs,
                     )
                     history = history.append(record)
-                    logStep(sessionId, goal, step, frame, prompt, rawOutput, parsedAction, execution, latency, null)
+                    logStep(sessionId, goal, step, frame, prompt, rawOutput, parsedAction, execution, inferenceMs, null)
                     _state.update {
                         it.copy(
                             history = history,
@@ -306,8 +307,7 @@ class AgentOrchestrator(
                             "error=$error rawPreview=${preview(rawOutput)}",
                         parseError,
                     )
-                    val latency = SystemClock.elapsedRealtime() - startedAt
-                    logStep(sessionId, goal, step, frame, prompt, rawOutput, null, null, latency, error)
+                    logStep(sessionId, goal, step, frame, prompt, rawOutput, null, null, inferenceMs, error)
                     _state.update {
                         it.copy(
                             invalidJsonCount = invalidJsonCount,
@@ -332,8 +332,7 @@ class AgentOrchestrator(
                         "Agent step failed sessionId=$sessionId step=$step error=$error rawPreview=${preview(rawOutput)}",
                         throwable,
                     )
-                    val latency = SystemClock.elapsedRealtime() - startedAt
-                    logStep(sessionId, goal, step, frame, prompt, rawOutput, parsedAction, execution, latency, error)
+                    logStep(sessionId, goal, step, frame, prompt, rawOutput, parsedAction, execution, inferenceMs, error)
                     finish(sessionId, "Failed: error", invalidJsonCount, error)
                     return
                 }

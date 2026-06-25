@@ -54,6 +54,7 @@ fun MainScreen(
     onStartFloatingBar: () -> Unit,
     onStopFloatingBar: () -> Unit,
     onInitializeModel: suspend () -> Unit,
+    onSpeculativeDecodingChanged: suspend (Boolean) -> Unit,
     onMaxStepsChanged: (Int) -> Unit,
     onPickGoalsFile: () -> Unit,
     onStartBenchmark: () -> Unit,
@@ -138,7 +139,9 @@ fun MainScreen(
                 onRequestNotification = onRequestNotification,
                 onRequestStorage = onRequestStorage,
                 onOpenAccessibilitySettings = onOpenAccessibilitySettings,
+                benchmarkRunning = evalState.isRunning,
                 onInitializeModel = onInitializeModel,
+                onSpeculativeDecodingChanged = onSpeculativeDecodingChanged,
                 onMaxStepsChanged = onMaxStepsChanged,
             )
             MainTab.Benchmark -> BenchmarkScreen(
@@ -572,12 +575,18 @@ private fun ControlScreen(
     onRequestNotification: () -> Unit,
     onRequestStorage: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
+    benchmarkRunning: Boolean,
     onInitializeModel: suspend () -> Unit,
+    onSpeculativeDecodingChanged: suspend (Boolean) -> Unit,
     onMaxStepsChanged: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
     var maxSteps by remember { mutableIntStateOf(agentState.maxSteps) }
+    val modelIsInitializing = modelState is ModelState.CopyingAsset ||
+        modelState is ModelState.InitializingGpu ||
+        modelState is ModelState.InitializingCpu
+    val modelControlsLocked = modelIsInitializing || agentState.isRunning || benchmarkRunning
 
     Column(
         modifier = modifier
@@ -628,10 +637,7 @@ private fun ControlScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                if (modelState is ModelState.CopyingAsset ||
-                    modelState is ModelState.InitializingGpu ||
-                    modelState is ModelState.InitializingCpu
-                ) {
+                if (modelIsInitializing) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(50)))
                 }
 
@@ -639,9 +645,7 @@ private fun ControlScreen(
                     onClick = { scope.launch { onInitializeModel() } },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
-                    enabled = modelState !is ModelState.CopyingAsset &&
-                        modelState !is ModelState.InitializingGpu &&
-                        modelState !is ModelState.InitializingCpu &&
+                    enabled = !modelControlsLocked &&
                         modelState !is ModelState.Ready,
                 ) {
                     Icon(Icons.Default.PowerSettingsNew, contentDescription = null)
@@ -685,6 +689,18 @@ private fun ControlScreen(
                         colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.tertiary)
                     )
                     Text("Enable prompt injection", style = MaterialTheme.typography.bodyMedium)
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = com.hemant.plannerv1.AppContainer.speculativeDecodingManager.isEnabled,
+                        onCheckedChange = { enabled ->
+                            scope.launch { onSpeculativeDecodingChanged(enabled) }
+                        },
+                        enabled = !modelControlsLocked,
+                        colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.tertiary)
+                    )
+                    Text("Enable speculative decoding", style = MaterialTheme.typography.bodyMedium)
                 }
 
                 if (agentState.lastError != null) {

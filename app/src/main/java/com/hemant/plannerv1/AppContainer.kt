@@ -13,6 +13,7 @@ import com.hemant.plannerv1.safety.SafetyController
 import com.hemant.plannerv1.eval.EvalRunner
 import com.hemant.plannerv1.logging.DbgLog
 import com.hemant.plannerv1.model.PromptInjectionManager
+import com.hemant.plannerv1.model.SpeculativeDecodingManager
 import java.io.File
 
 object AppContainer {
@@ -38,6 +39,8 @@ object AppContainer {
         private set
     lateinit var promptInjectionManager: PromptInjectionManager
         private set
+    lateinit var speculativeDecodingManager: SpeculativeDecodingManager
+        private set
     lateinit var evalRunner: EvalRunner
         private set
 
@@ -52,7 +55,8 @@ object AppContainer {
         permissionManager = PermissionManager(appContext)
         screenCaptureManager = ScreenCaptureManager(appContext)
         gestureExecutor = GestureExecutor(appContext)
-        modelManager = GemmaModelManager(appContext)
+        speculativeDecodingManager = SpeculativeDecodingManager(appContext)
+        modelManager = GemmaModelManager(appContext, speculativeDecodingManager)
         modelInputBuilder = ModelInputBuilder()
         modelOutputParser = ModelOutputParser()
         safetyController = SafetyController()

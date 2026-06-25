@@ -147,7 +147,7 @@ private fun SessionLogCard(session: EvaluationSession) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(session.goal.ifBlank { session.sessionId }, style = MaterialTheme.typography.titleSmall)
                     Text(
-                        text = "${session.status} | ${session.steps} steps | avg ${session.averageLatencyMs} ms | invalid JSON ${session.invalidJsonCount}",
+                        text = "${session.status} | ${session.steps} steps | avg model ${session.averageLatencyMs} ms | invalid JSON ${session.invalidJsonCount}",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -192,7 +192,7 @@ private fun StepDetailCard(step: StepData) {
         ) {
             Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                 Text("Step ${step.stepNumber}", style = MaterialTheme.typography.labelLarge)
-                Text("${step.latencyMs} ms", style = MaterialTheme.typography.labelSmall)
+                Text("Model ${step.latencyMs} ms", style = MaterialTheme.typography.labelSmall)
             }
             if (isError) {
                 Text("Error: ${step.error}", color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodySmall)

@@ -20,7 +20,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileOutputStream
 import kotlin.system.measureTimeMillis
 
 sealed interface ModelState {
@@ -33,7 +32,10 @@ sealed interface ModelState {
     data class Error(val message: String) : ModelState
 }
 
-class GemmaModelManager(private val context: Context) {
+class GemmaModelManager(
+    private val context: Context,
+    private val speculativeDecodingManager: SpeculativeDecodingManager,
+) {
     private val mutex = Mutex()
     private val _state = MutableStateFlow<ModelState>(ModelState.NotInitialized)
     val state: StateFlow<ModelState> = _state.asStateFlow()
@@ -115,11 +117,36 @@ class GemmaModelManager(private val context: Context) {
         _state.value = ModelState.NotInitialized
     }
 
+    suspend fun reinitializeForRuntimeSettingChange() {
+        val shouldInitialize = mutex.withLock {
+            if (engine == null) {
+                DbgLog.i("Model reinitialize skipped: engine not initialized")
+                return@withLock false
+            }
+            DbgLog.i(
+                "Model reinitialize requested for runtime setting change " +
+                    "speculativeDecoding=${speculativeDecodingManager.isEnabled}",
+            )
+            engine?.close()
+            engine = null
+            _state.value = ModelState.NotInitialized
+            true
+        }
+
+        if (shouldInitialize) {
+            initialize()
+        }
+    }
+
     @OptIn(ExperimentalApi::class)
     private suspend fun initializeEngine(modelFile: File) = withContext(Dispatchers.IO) {
-        ExperimentalFlags.enableSpeculativeDecoding = false
+        val speculativeDecodingEnabled = speculativeDecodingManager.isEnabled
+        ExperimentalFlags.enableSpeculativeDecoding = speculativeDecodingEnabled
         val cacheDir = File(context.cacheDir, "litertlm").apply { mkdirs() }
-        DbgLog.i("Model engine init start path=${modelFile.absolutePath} bytes=${modelFile.length()}")
+        DbgLog.i(
+            "Model engine init start path=${modelFile.absolutePath} bytes=${modelFile.length()} " +
+                "speculativeDecoding=$speculativeDecodingEnabled",
+        )
         val gpuError = runCatching {
             _state.value = ModelState.InitializingGpu
             DbgLog.i("Model engine init GPU start")

@@ -127,6 +127,13 @@ class MainActivity : ComponentActivity() {
                     onInitializeModel = {
                         AppContainer.modelManager.initialize()
                     },
+                    onSpeculativeDecodingChanged = { enabled ->
+                        val setting = AppContainer.speculativeDecodingManager
+                        if (setting.isEnabled != enabled) {
+                            setting.isEnabled = enabled
+                            AppContainer.modelManager.reinitializeForRuntimeSettingChange()
+                        }
+                    },
                     onMaxStepsChanged = {
                         AppContainer.agentOrchestrator.setMaxSteps(it)
                     },

@@ -2,6 +2,7 @@ package com.hemant.plannerv1.capture
 
 import android.content.Context
 import android.graphics.Bitmap
+import com.hemant.plannerv1.logging.DbgLog
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.math.max
@@ -31,7 +32,7 @@ data class ScreenshotFrame(
 
 class ScreenshotProcessor(
     private val context: Context,
-    private val maxModelDimension: Int = 1024,
+    private val maxModelDimension: Int = 1600,
 ) {
     fun process(sessionId: String, stepNumber: Int, bitmap: Bitmap): ScreenshotFrame {
         val dir = File(context.filesDir, "ui_action_agent/screenshots/$sessionId")
@@ -40,16 +41,46 @@ class ScreenshotProcessor(
         val originalFile = File(dir, "step_${stepNumber}_original.png")
         savePng(bitmap, originalFile)
 
-        return ScreenshotFrame(
-            sessionId = sessionId,
-            stepNumber = stepNumber,
-            originalPath = originalFile.absolutePath,
-            modelPath = originalFile.absolutePath,
-            originalWidth = bitmap.width,
-            originalHeight = bitmap.height,
-            modelWidth = bitmap.width,
-            modelHeight = bitmap.height,
+        val modelBitmap = resizeForModel(bitmap)
+        val modelFile = if (modelBitmap === bitmap) {
+            originalFile
+        } else {
+            File(dir, "step_${stepNumber}_model.png").also { savePng(modelBitmap, it) }
+        }
+
+        DbgLog.i(
+            "Screenshot resize original=${bitmap.width}x${bitmap.height} " +
+                "model=${modelBitmap.width}x${modelBitmap.height}",
         )
+
+        return try {
+            ScreenshotFrame(
+                sessionId = sessionId,
+                stepNumber = stepNumber,
+                originalPath = originalFile.absolutePath,
+                modelPath = modelFile.absolutePath,
+                originalWidth = bitmap.width,
+                originalHeight = bitmap.height,
+                modelWidth = modelBitmap.width,
+                modelHeight = modelBitmap.height,
+            )
+        } finally {
+            if (modelBitmap !== bitmap) {
+                modelBitmap.recycle()
+            }
+        }
+    }
+
+    private fun resizeForModel(bitmap: Bitmap): Bitmap {
+        val longEdge = max(bitmap.width, bitmap.height)
+        if (longEdge <= maxModelDimension) {
+            return bitmap
+        }
+
+        val scale = maxModelDimension.toFloat() / longEdge.toFloat()
+        val targetWidth = (bitmap.width * scale).roundToInt().coerceAtLeast(1)
+        val targetHeight = (bitmap.height * scale).roundToInt().coerceAtLeast(1)
+        return Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
     }
 
     private fun savePng(bitmap: Bitmap, file: File) {
