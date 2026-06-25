@@ -121,7 +121,7 @@ class PromptInjectionManager(context: Context) {
             AppWorkflow.GOOGLE_MAPS -> """
                 APP WORKFLOW - Google Maps (follow exactly):
 
-                PRIORITY ORDER:
+                PRIORITY ORDER: START BUTTON, DIRECTIONS BUTTON. IF START IS VISIBLE CLICK ON START NOTHING ELSE, IF DIRECTIONS BUTTON IS THERE CLICK ON DIRECTIONS NOTHING ELSE
                 1. Search field -> type destination/place.
                 2. Search results -> click the best matching non-ad result.
                 3. Place details for a navigation/route goal -> click the button with visible text "Directions".
