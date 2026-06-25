@@ -11,6 +11,7 @@ import com.hemant.plannerv1.agent.AppTargetDetector
 import com.hemant.plannerv1.agent.ExecutionResult
 import com.hemant.plannerv1.agent.TargetAppDetection
 import com.hemant.plannerv1.logging.DbgLog
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
@@ -28,6 +29,13 @@ data class CurrentAppContext(
         return value?.takeIf { it.isNotBlank() && !it.equals("unknown", ignoreCase = true) }
     }
 }
+
+data class LaunchableAppMatch(
+    val appName: String,
+    val packageName: String,
+    val score: Int,
+    val matchSource: String,
+)
 
 class GestureExecutor(private val context: Context) {
     fun currentPackageName(): String? {
@@ -76,6 +84,90 @@ class GestureExecutor(private val context: Context) {
             .distinctBy { it.lowercase() }
     }
 
+    fun resolveLaunchableApp(query: String): LaunchableAppMatch? {
+        val normalizedQuery = query.trim()
+        if (normalizedQuery.isBlank()) return null
+
+        val pm = context.packageManager
+        val launcherIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
+            addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+        }
+        val activities = pm.queryIntentActivities(launcherIntent, 0)
+
+        var bestMatch: LaunchableAppMatch? = null
+        for (info in activities) {
+            val label = info.loadLabel(pm).toString().trim()
+            val pkg = info.activityInfo.packageName
+            val score = scoreAppNameMatch(normalizedQuery, label)
+            if (score > (bestMatch?.score ?: 0)) {
+                bestMatch = LaunchableAppMatch(
+                    appName = label.ifBlank { pkg },
+                    packageName = pkg,
+                    score = score,
+                    matchSource = "app label",
+                )
+            }
+        }
+
+        if ((bestMatch?.score ?: 0) == 0) {
+            for (info in activities) {
+                val pkg = info.activityInfo.packageName
+                val score = scoreAppNameMatch(normalizedQuery, pkg)
+                if (score > (bestMatch?.score ?: 0)) {
+                    bestMatch = LaunchableAppMatch(
+                        appName = info.loadLabel(pm).toString().trim().ifBlank { pkg },
+                        packageName = pkg,
+                        score = score,
+                        matchSource = "package name",
+                    )
+                }
+            }
+        }
+
+        return bestMatch?.takeIf { it.score > 0 }
+    }
+
+    fun isForegroundApp(packageName: String?): Boolean {
+        if (packageName.isNullOrBlank()) return false
+        return currentPackageName().equals(packageName, ignoreCase = true)
+    }
+
+    suspend fun openResolvedAppAndWait(
+        match: LaunchableAppMatch,
+        clearTask: Boolean = true,
+        timeoutMs: Long = 2000L,
+        pollIntervalMs: Long = 200L,
+    ): ExecutionResult {
+        val intent = buildLaunchIntent(
+            packageName = match.packageName,
+            clearTask = clearTask,
+        ) ?: return ExecutionResult(false, "App not found or cannot be launched: ${match.appName}")
+
+        DbgLog.i(
+            "Auto-opening app ${match.appName} package=${match.packageName} " +
+                "score=${match.score} source=${match.matchSource} clearTask=$clearTask",
+            tag = "ACTION_DBG",
+        )
+        context.startActivity(intent)
+
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (isForegroundApp(match.packageName)) {
+                DbgLog.i(
+                    "Confirmed foreground app ${match.appName} package=${match.packageName}",
+                    tag = "ACTION_DBG",
+                )
+                return ExecutionResult(true, "openApp(${match.appName})")
+            }
+            delay(pollIntervalMs)
+        }
+
+        return ExecutionResult(
+            false,
+            "Launch started for ${match.appName}, but foreground confirmation timed out after ${timeoutMs}ms.",
+        )
+    }
+
     suspend fun click(x: Int, y: Int): ExecutionResult {
         DbgLog.d("Executing click gesture at x=$x, y=$y", tag = "ACTION_DBG")
         val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
@@ -108,75 +200,39 @@ class GestureExecutor(private val context: Context) {
         return dispatch(path, durationMs = 420, label = "scrollDown()")
     }
 
-    fun openApp(appName: String, clearTask: Boolean = false): ExecutionResult {
-        val query = appName.trim()
-        if (query.isBlank()) {
-            return ExecutionResult(false, "App name is empty.")
+    fun openApp(appName: String, clearTask: Boolean = true): ExecutionResult {
+        val match = resolveLaunchableApp(appName)
+            ?: return ExecutionResult(false, "App not found or cannot be launched: ${appName.trim()}")
+
+        val intent = buildLaunchIntent(
+            packageName = match.packageName,
+            clearTask = clearTask,
+        )
+
+        if (intent != null) {
+            DbgLog.d(
+                "Opening app ${match.appName} matched ${match.packageName} " +
+                    "with score ${match.score} source=${match.matchSource} clearTask=$clearTask",
+                tag = "ACTION_DBG",
+            )
+            context.startActivity(intent)
+            return ExecutionResult(true, "openApp(${match.appName})")
         }
 
-        val pm = context.packageManager
-        val launcherIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
-            addCategory(android.content.Intent.CATEGORY_LAUNCHER)
-        }
-        val activities = pm.queryIntentActivities(launcherIntent, 0)
-
-        var bestScore = 0
-        var bestPackage: String? = null
-        var matchSource = "app label"
-
-        for (info in activities) {
-            val label = info.loadLabel(pm).toString()
-            val pkg = info.activityInfo.packageName
-
-            val score = scoreAppNameMatch(query, label)
-            if (score > bestScore) {
-                bestScore = score
-                bestPackage = pkg
-            }
-        }
-
-        if (bestScore == 0) {
-            matchSource = "package name"
-            for (info in activities) {
-                val pkg = info.activityInfo.packageName
-                val score = scoreAppNameMatch(query, pkg)
-                if (score > bestScore) {
-                    bestScore = score
-                    bestPackage = pkg
-                }
-            }
-        }
-
-        if (bestPackage != null) {
-            val intent = pm.getLaunchIntentForPackage(bestPackage)?.apply {
-                var flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                if (clearTask) {
-                    flags = flags or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
-                }
-                addFlags(flags)
-            }
-            if (intent != null) {
-                DbgLog.d(
-                    "Opening app $query matched $bestPackage with score $bestScore source=$matchSource clearTask=$clearTask",
-                    tag = "ACTION_DBG",
-                )
-                context.startActivity(intent)
-                return ExecutionResult(true, "openApp($query)")
-            }
-        }
-
-        return ExecutionResult(false, "App not found or cannot be launched: $query")
+        return ExecutionResult(false, "App not found or cannot be launched: ${match.appName}")
     }
 
     private fun scoreAppNameMatch(query: String, candidate: String?): Int {
+        val normalizedQuery = query.trim()
+        if (normalizedQuery.isBlank()) return 0
         val value = candidate?.trim().orEmpty()
-        if (query.isBlank() || value.isBlank()) return 0
+        if (value.isBlank()) return 0
         return when {
-            value.equals(query, ignoreCase = true) -> 100
-            value.startsWith(query, ignoreCase = true) -> 80
-            value.contains(query, ignoreCase = true) -> 60
-            query.contains(value, ignoreCase = true) -> 50
-            else -> scoreWordWindowMatch(query, value)
+            value.equals(normalizedQuery, ignoreCase = true) -> 100
+            value.startsWith(normalizedQuery, ignoreCase = true) -> 80
+            value.contains(normalizedQuery, ignoreCase = true) -> 60
+            normalizedQuery.contains(value, ignoreCase = true) -> 50
+            else -> scoreWordWindowMatch(normalizedQuery, value)
         }
     }
 
@@ -497,6 +553,21 @@ class GestureExecutor(private val context: Context) {
             if (!accepted && continuation.isActive) {
                 continuation.resume(ExecutionResult(false, "$label was rejected."))
             }
+        }
+    }
+
+    private fun buildLaunchIntent(
+        packageName: String,
+        clearTask: Boolean,
+    ): android.content.Intent? {
+        val pm = context.packageManager
+        return pm.getLaunchIntentForPackage(packageName)?.apply {
+            var flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+            if (clearTask) {
+                flags = flags or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+                flags = flags or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            addFlags(flags)
         }
     }
 

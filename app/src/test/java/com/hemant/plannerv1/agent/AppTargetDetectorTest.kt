@@ -149,4 +149,37 @@ class AppTargetDetectorTest {
 
         assertNull(detection)
     }
+
+    @Test
+    fun hardcodesTemuWhenGoalContainsTemu() {
+        val detection = AppTargetDetector.detect(
+            goal = "find kitchen deals on temu",
+            installedAppNames = listOf("Temu", "Chrome"),
+        )
+
+        assertEquals("Temu", detection?.appName)
+        assertEquals("temu", detection?.matchedText)
+    }
+
+    @Test
+    fun hardcodesMapsWhenGoalContainsGoogleMaps() {
+        val detection = AppTargetDetector.detect(
+            goal = "open google maps and show route to airport",
+            installedAppNames = listOf("Maps", "Chrome"),
+        )
+
+        assertEquals("Maps", detection?.appName)
+        assertEquals("google maps", detection?.matchedText)
+    }
+
+    @Test
+    fun hardcodesMapsWhenGoalContainsNavigateAndMaps() {
+        val detection = AppTargetDetector.detect(
+            goal = "navigate to the station using maps",
+            installedAppNames = listOf("Maps", "Chrome"),
+        )
+
+        assertEquals("Maps", detection?.appName)
+        assertEquals("navigate maps", detection?.matchedText)
+    }
 }

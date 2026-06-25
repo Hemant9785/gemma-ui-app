@@ -22,9 +22,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -62,6 +64,7 @@ fun LogsScreen(
     modifier: Modifier = Modifier,
 ) {
     var sessions by remember { mutableStateOf(logger.loadSessions()) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier,
@@ -73,9 +76,15 @@ fun LogsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("Evaluation Logs", style = MaterialTheme.typography.titleMedium)
-            OutlinedButton(onClick = { sessions = logger.loadSessions() }) {
-                Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-                Text("Refresh")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { sessions = logger.loadSessions() }) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                    Text("Refresh")
+                }
+                OutlinedButton(onClick = { showDeleteConfirm = true }) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete all")
+                    Text("Delete All")
+                }
             }
         }
 
@@ -93,6 +102,28 @@ fun LogsScreen(
                 }
             }
         }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete all logs?") },
+            text = { Text("This removes every saved evaluation log on the device.") },
+            confirmButton = {
+                OutlinedButton(onClick = {
+                    logger.deleteAllLogs()
+                    sessions = logger.loadSessions()
+                    showDeleteConfirm = false
+                }) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }
 

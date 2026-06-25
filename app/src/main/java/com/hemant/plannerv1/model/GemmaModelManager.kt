@@ -175,13 +175,17 @@ class GemmaModelManager(private val context: Context) {
     private fun conversationConfig(): ConversationConfig {
         return ConversationConfig(
             systemInstruction = Contents.of(
-                "<|think|>" +
-                    "You are UIActionAgent, an on-device Android UI automation agent. " +
-                    "You MUST strictly follow these rules:\n" +
-                    "1. If on the Home Screen / Launcher and the goal requires opening an app, use 'open_app' action. Do NOT click app icons visually.\n" +
-                    "2. Prefer high-level actions over visual clicks.\n" +
-                    "3. Return only the required JSON action object in the final answer.",
-            ),
+    "You are UIActionAgent, an on-device Android UI automation agent.\n" +
+    "Always decide exactly ONE next action.\n" +
+    "Use the current screenshot as the primary source of truth.\n" +
+    "If the goal is already complete, return action='done'.\n" +
+    "If a popup/modal/overlay blocks the screen, handle the overlay first; click Close/X/Skip/Not now/Continue if visible. Never click background content behind an overlay.\n" +
+    "For search-only goals, return done once relevant search results are visible.\n" +
+    "Prefer high-level actions over visual clicks.\n" +
+    "Never repeat a failed action.\n" +
+    "Do not click back, home button when app is loading. correct action is wait in such cases" + 
+    "Return only the required JSON object."
+),
             samplerConfig = SamplerConfig(
                 topK = 1,
                 topP = 0.95,

@@ -81,6 +81,8 @@ class AgentOrchestrator(
         var consecutiveInvalidJsonCount = 0
         var lastError: String? = null
         val detectedTargetApp = gestureExecutor.detectTargetAppInGoal(goal)
+        val resolvedTargetApp = detectedTargetApp?.appName?.let(gestureExecutor::resolveLaunchableApp)
+        var attemptedAutoLaunch = false
         _state.value = AgentState(
             isRunning = true,
             goal = goal,
@@ -102,6 +104,39 @@ class AgentOrchestrator(
                         error = "Blocked app: ${appContext.preferredName}",
                     )
                     return
+                }
+                if (!attemptedAutoLaunch && resolvedTargetApp != null) {
+                    attemptedAutoLaunch = true
+                    if (!gestureExecutor.isForegroundApp(resolvedTargetApp.packageName)) {
+                        _state.update {
+                            it.copy(
+                                currentStep = step,
+                                status = "Opening ${resolvedTargetApp.appName}",
+                                history = history,
+                                invalidJsonCount = invalidJsonCount,
+                            )
+                        }
+                        DbgLog.i(
+                            "Agent auto-launch attempt sessionId=$sessionId step=$step " +
+                                "app=${resolvedTargetApp.appName} package=${resolvedTargetApp.packageName}",
+                            tag = "ACTION_DBG",
+                        )
+                        val autoLaunchResult = gestureExecutor.openResolvedAppAndWait(resolvedTargetApp)
+                        DbgLog.i(
+                            "Agent auto-launch result sessionId=$sessionId step=$step " +
+                                "success=${autoLaunchResult.success} message=${autoLaunchResult.message}",
+                            tag = "ACTION_DBG",
+                        )
+                        if (!autoLaunchResult.success) {
+                            lastError = autoLaunchResult.message
+                        }
+                        delay(maxOf(safetyController.actionDelayMs, 300L))
+                        continue
+                    }
+                    DbgLog.i(
+                        "Agent auto-launch skipped: target app already foreground package=${resolvedTargetApp.packageName}",
+                        tag = "ACTION_DBG",
+                    )
                 }
 
                 _state.update {
@@ -162,7 +197,7 @@ class AgentOrchestrator(
                         lastError = "You have scrolled twice in a row. " +
                             "Scrolling again is unlikely to help. " +
                             "Please try a different action: click a visible element, " +
-                            "use open_app, type_text, back, or done."
+                            "type_text, back, wait, or done."
                         // still execute the scroll so the screen actually moves
                     }
 

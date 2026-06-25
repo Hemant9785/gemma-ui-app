@@ -109,24 +109,33 @@ class PromptInjectionManager(context: Context) {
                 STOP RULE: Output done=true once the requested video is playing or the requested player setting is visibly applied.
             """.trimIndent()
 
+            AppWorkflow.HOTSTAR -> """
+                APP WORKFLOW - Hotstar (follow exactly):
+
+                FINDING SEARCH:
+                1. Tap the magnifying-glass Search icon in the bottom navigation bar.
+                2. Wait for the search input field to appear.
+                3. Tap the visible search input field, then type the requested query. Enter is pressed automatically after typing.
+            """.trimIndent()
+
             AppWorkflow.GOOGLE_MAPS -> """
                 APP WORKFLOW - Google Maps (follow exactly):
 
-                SEARCH / PLACE:
-                1. Tap the search bar at the top and type the requested place/address. Enter is pressed automatically after typing.
-                2. Choose the exact place result by matching name, address, category, and visible map/list details.
-                3. If multiple similar places appear, prefer the exact name/address match over nearby ads or sponsored suggestions.
+                PRIORITY ORDER:
+                1. Search field -> type destination/place.
+                2. Search results -> click the best matching non-ad result.
+                3. Place details for a navigation/route goal -> click the button with visible text "Directions".
+                4. Directions screen with correct route -> click Start.
+                5. Immediately output done=true after Start is clicked.
 
-                NAVIGATION:
-                1. After the correct place is open, tap Directions.
-                2. If the goal mentions current location, use the current-location/crosshair button or leave the start field as current location.
-                3. If a start location is specified, tap the start field and type that start location.
-                4. If transport mode is specified, choose it before Start: car/driving, transit/public transport, walking, bicycle, or ride/taxi.
-                5. Tap Start only after destination, start location, and transport mode are correct.
-                6. If location permission appears and the goal requires current location/navigation, tap the visible allow option.
-
-                STOP RULE: Output done=true once the place details are open, or once navigation has started when the goal asks to navigate.
-            """.trimIndent()
+                STRICT RULES:
+                - For navigation or route goals, if a visible button says "Directions", click that button first.
+                - Before clicking Directions, do not click Filters, All, Top rated, Open now, Nearby, Save, Lists, Share, or similar chips/buttons.
+                - Do not click map background when action buttons are visible.
+                - If the goal is only place search and the correct place details are already open, output done=true.
+                - If a permission/location popup appears, handle it first. Use Allow when current location/navigation needs it.
+                - After clicking Start, do not click anything else. Output done=true.
+                """.trimIndent()
 
             AppWorkflow.FACEBOOK -> """
                 APP WORKFLOW - Facebook (follow exactly):
@@ -201,6 +210,7 @@ class PromptInjectionManager(context: Context) {
             normalized.contains("whatsapp") -> AppWorkflow.WHATSAPP
             normalized.contains("outlook") -> AppWorkflow.OUTLOOK
             normalized == "youtube" -> AppWorkflow.YOUTUBE
+            normalized.contains("hotstar") -> AppWorkflow.HOTSTAR
             normalized == "google maps" -> AppWorkflow.GOOGLE_MAPS
             normalized.contains("facebook") -> AppWorkflow.FACEBOOK
             normalized == "instagram" -> AppWorkflow.INSTAGRAM
@@ -220,6 +230,8 @@ class PromptInjectionManager(context: Context) {
             normalized.contains("com.whatsapp") -> AppWorkflow.WHATSAPP
             normalized.contains("com.microsoft.office.outlook") -> AppWorkflow.OUTLOOK
             normalized.contains("com.google.android.youtube") -> AppWorkflow.YOUTUBE
+            normalized.contains("in.startv.hotstar") -> AppWorkflow.HOTSTAR
+            normalized.contains("hotstar") -> AppWorkflow.HOTSTAR
             normalized.contains("com.google.android.apps.maps") -> AppWorkflow.GOOGLE_MAPS
             normalized.contains("com.facebook.katana") -> AppWorkflow.FACEBOOK
             normalized.contains("com.facebook.lite") -> AppWorkflow.FACEBOOK
@@ -235,6 +247,7 @@ private enum class AppWorkflow {
     WHATSAPP,
     OUTLOOK,
     YOUTUBE,
+    HOTSTAR,
     GOOGLE_MAPS,
     FACEBOOK,
     INSTAGRAM,

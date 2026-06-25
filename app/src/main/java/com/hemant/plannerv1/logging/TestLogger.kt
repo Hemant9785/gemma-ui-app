@@ -115,6 +115,14 @@ class TestLogger(private val context: Context) {
             ?: emptyList()
     }
 
+    fun deleteAllLogs(): Int {
+        val dir = logsDir()
+        val deletedCount = dir.listFiles()?.sumOf { file ->
+            if (file.deleteRecursively()) 1 else 0
+        } ?: 0
+        return deletedCount
+    }
+
     private fun parseSession(file: File): EvaluationSession? {
         var sessionId = file.nameWithoutExtension
         var goal = ""

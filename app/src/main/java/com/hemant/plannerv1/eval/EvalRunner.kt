@@ -216,6 +216,8 @@ class EvalRunner(
         var consecutiveInvalidJsonCount = 0
         var lastError: String? = null
         val detectedTargetApp = gestureExecutor.detectTargetAppInGoal(goal)
+        val resolvedTargetApp = detectedTargetApp?.appName?.let(gestureExecutor::resolveLaunchableApp)
+        var attemptedAutoLaunch = false
         val deadline = SystemClock.elapsedRealtime() + goalTimeoutMs
 
         var step = 1
@@ -226,6 +228,41 @@ class EvalRunner(
                 DbgLog.w("EvalRunner goal $goalNumber timed out at step $step")
                 finalStatus = "Failed: timeout"
                 break
+            }
+            if (!attemptedAutoLaunch && resolvedTargetApp != null) {
+                attemptedAutoLaunch = true
+                if (!gestureExecutor.isForegroundApp(resolvedTargetApp.packageName)) {
+                    _state.update {
+                        it.copy(
+                            currentStep = step,
+                            currentStatus = "Goal $goalNumber | Step $step - Opening ${resolvedTargetApp.appName}",
+                        )
+                    }
+                    DbgLog.i(
+                        "EvalRunner auto-launch attempt goal=$goalNumber step=$step " +
+                            "app=${resolvedTargetApp.appName} package=${resolvedTargetApp.packageName}",
+                        tag = "ACTION_DBG",
+                    )
+                    val autoLaunchResult = gestureExecutor.openResolvedAppAndWait(
+                        match = resolvedTargetApp,
+                        clearTask = true,
+                    )
+                    DbgLog.i(
+                        "EvalRunner auto-launch result goal=$goalNumber step=$step " +
+                            "success=${autoLaunchResult.success} message=${autoLaunchResult.message}",
+                        tag = "ACTION_DBG",
+                    )
+                    if (!autoLaunchResult.success) {
+                        lastError = autoLaunchResult.message
+                    }
+                    delay(maxOf(safetyController.actionDelayMs, 300L))
+                    continue
+                }
+                DbgLog.i(
+                    "EvalRunner auto-launch skipped: target app already foreground " +
+                        "package=${resolvedTargetApp.packageName}",
+                    tag = "ACTION_DBG",
+                )
             }
 
             _state.update {
@@ -305,7 +342,7 @@ class EvalRunner(
                     lastError = "You have scrolled twice in a row. " +
                         "Scrolling again is unlikely to help. " +
                         "Please try a different action: click a visible element, " +
-                        "use open_app, type_text, back, or done."
+                        "type_text, back, wait, or done."
                     // still execute the scroll so the screen actually moves
                 }
 

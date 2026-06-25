@@ -72,7 +72,7 @@ class ModelInputBuilder {
                 Detected target app from user goal:
                 - App: $detectedTargetApp
                 - Exact installed-app-name match: $detectedTargetMatch
-                Instruction: If Current App is not $detectedTargetApp, prefer open_app("$detectedTargetApp") before click, type_text, or scroll actions.
+                Instruction: If Current App is not $detectedTargetApp, expect the runtime to open it before the next screenshot when possible.
             """.trimIndent()
         } else {
             null
@@ -94,91 +94,46 @@ class ModelInputBuilder {
         } else ""
 
         val prompt = """
-                Act like UIActionAgent, an on-device Android UI automation agent.
+Act like UIActionAgent, an on-device Android UI automation agent.
 
-                Your task is to decide the next single action that best moves toward the user goal, based on the screenshot and context.
+Decide the next single action that best progresses the user goal.
 
-                Before choosing an action:
-                1) First analyze the user goal, current screen, and previous actions.
-                2) Check whether the goal has already been completed.
-                3) If the goal is completed, return action = "done" and done = true.
-                4) If the goal is not completed, choose exactly one next action.
+First analyze the goal, current screen, and previous actions. If the goal is already fully completed, return action="done" and done=true.
 
-                Decision rules:
-                1) Evidence priority:
-                   - Base the action first on the current screenshot and visible UI, then previous actions and their results, then the user goal and completion state.
-                   - Treat app-specific guidance as contextual hints only. Never assume an element exists because guidance mentions it.
-                2) Follow this action priority order whenever it matches the visible screen and action history:
-                   open_app > type_text > click > scroll_down / scroll_up > wait > back > done.
-                3) Prefer high-level actions over low-level visual clicks.
-                4) Home Screen rule:
-                   - If the current screen is the Home Screen or Launcher and the goal requires opening an app, use open_app.
-                   - Do not click app icons from the launcher.
-                5) Failure loop rule:
-                   - If the previous step failed, do not repeat the same action.
-                   - Try a different valid action.
-                6) Search rule:
-                   - If a search bar/input field is directly visible, use type_text.
-                   - If only a search icon is visible, click the search icon first.
-                   - After successfully typing a search query, inspect product images and search result descriptions closely.
-                   - Match results to the user's final goal by checking category, brand, and exact details.
-                   - Ignore ads or sponsored products unless truly relevant.
-                   - If no strong matching result is visible, use scroll_down to find a better match.
-                7) Click rule:
-                   - For click, return bounding_box as [ymin, xmin, ymax, xmax] in 0-1000 scale.
-                   - The center of the box will be clicked.
-                8) Type rule:
-                   - For type_text, return the bounding_box of the input field and the text to type.
-                9) Visibility rule:
-                   - If the target is not visible, use scroll_down or scroll_up.
-                10) Loading rule:
-                   - If the page is loading or an animation is still running, use wait.
-                11) Stuck rule:
-                   - Use back only if the current screen is clearly not useful for the goal.
-                12) Completion rule:
-                   - Use done only when the goal is fully completed.
+Rules:
+- Current screenshot is the source of truth.
+- Choose exactly one action.
+- Prefer: type_text > click > scroll_down > scroll_up > wait > back.
+- Do not repeat a failed previous action.
+- If a relevant input/search field is visible and needed text is not already entered, use type_text.
+- If only a search icon is visible, click it first.
+- If target is not visible, scroll.
+- Use wait only for loading/transition.
+- Use back only if current screen is clearly wrong or blocked.l
+- Use done only when the final user goal is fully satisfied.
+- For click/type_text, bounding_box format is [ymin,xmin,ymax,xmax] in 0-1000 scale.
+- Overlay rule: If a popup, modal, ad, permission dialog, bottom sheet, or spin-wheel overlay blocks the screen, handle it first. Prefer Close/X, Skip, Not now, Maybe later, Continue, or Allow when required. Do not interact with background UI behind the overlay.
+- Search completion rule: If the goal is only to search/find/show results, return done once relevant results for the query are visible. Do not click filters, sort, product cards, or ads unless the goal specifically asks to refine, select, buy, or open an item.
+- Return JSON only.
 
-                EXAMPLES OF CORRECT OUTPUTS:
+CURRENT TASK CONTEXT:
+GOAL: $goal
+Current App: $currentAppName
+$detectedTargetAppContextStr
+Steps done:
+$stepsDone
+$injectionStr
+$errorWarning
 
-                Example 1 (Opening an app from launcher):
-                GOAL: Search for movies in Video App
-                Current App: Launcher
-                Steps done: None.
-                Response: {"thought":"Goal is not complete. We are on the launcher screen, so we should launch Video App.","action":"open_app","bounding_box":null,"text":null,"app_name":"Video App","reason":"Open Video App from launcher","done":false}
+Return JSON only. Keep "thought" and "reason" concise.
 
-                Example 2 (Typing search query):
-                GOAL: Search for beach clothes in Shopping App
-                Current App: Shopping App
-                Steps done: 1. open_app (Shopping App) -> success
-                Response: {"thought":"Goal is not complete. The search bar is visible in Shopping App, so we should type our query.","action":"type_text","bounding_box":[45,60,110,940],"text":"beach clothes","app_name":null,"reason":"Type search query in the search input field","done":false}
-
-                Example 3 (Completing goal):
-                GOAL: Search for beach clothes in Shopping App
-                Current App: Shopping App
-                Steps done:
-                1. open_app (Shopping App) -> success
-                2. type_text (text: 'beach clothes') -> success
-                Response: {"thought":"Goal is complete since the search results for beach clothes are now displayed on screen.","action":"done","bounding_box":null,"text":null,"app_name":null,"reason":"Search results for beach clothes are displayed","done":true}
-
-                CURRENT TASK CONTEXT:
-                GOAL: $goal
-                Current App: $currentAppName
-                $detectedTargetAppContextStr
-                Steps done:
-                $stepsDone
-                $injectionStr
-                $errorWarning
-                Return JSON only. Do not include markdown, comments, or extra text.
-                Keep "thought" and "reason" to one concise sentence each.
-
-                JSON action requirements:
-                - Every action requires "action": "click|type_text|scroll_up|scroll_down|open_app|wait|back|done".
-                - click additionally requires "bounding_box": [ymin,xmin,ymax,xmax].
-                - type_text additionally requires "bounding_box": [ymin,xmin,ymax,xmax] and non-empty "text".
-                - open_app additionally requires non-empty "app_name".
-                - "thought" and "reason" are optional concise strings.
-                - Other fields are optional and ignored when they are not required by the selected action.
-            """.trimIndent()
+JSON action requirements:
+- Every action requires "action": "click|type_text|scroll_up|scroll_down|wait|back|done".
+- click additionally requires "bounding_box": [ymin,xmin,ymax,xmax].
+- type_text additionally requires "bounding_box": [ymin,xmin,ymax,xmax] and non-empty "text".
+- "thought" and "reason" are optional concise strings.
+- Other fields are optional and ignored when not required.
+""".trimIndent()
 
         DbgLog.d(
             "Prompt built goalChars=${goal.length} step=$stepNumber/$maxSteps " +

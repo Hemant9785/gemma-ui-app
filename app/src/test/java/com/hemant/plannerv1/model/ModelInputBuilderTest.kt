@@ -66,7 +66,7 @@ class ModelInputBuilderTest {
         assertTrue(request.prompt.contains("GOAL: buy shoes from flipkart"))
         assertTrue(request.prompt.contains("Detected target app from user goal:"))
         assertTrue(request.prompt.contains("- App: Flipkart"))
-        assertTrue(request.prompt.contains("prefer open_app(\"Flipkart\")"))
+        assertTrue(request.prompt.contains("expect the runtime to open it before the next screenshot when possible"))
     }
 
     @Test

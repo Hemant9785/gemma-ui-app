@@ -7,6 +7,9 @@ data class TargetAppDetection(
 
 object AppTargetDetector {
     private const val MIN_MATCH_CHARS = 4
+    private const val TEMU_APP_NAME = "Temu"
+    private const val MAPS_APP_NAME = "Maps"
+    private const val GOOGLE_MAPS_APP_NAME = "Google Maps"
 
     private val excludedExactMatches = setOf(
         "account",
@@ -324,6 +327,7 @@ object AppTargetDetector {
     fun detect(goal: String, installedAppNames: List<String>): TargetAppDetection? {
         val normalizedGoal = normalizePhrase(goal)
         if (normalizedGoal.isBlank()) return null
+        detectHardcodedApp(normalizedGoal, installedAppNames)?.let { return it }
 
         val matches = installedAppNames
             .asSequence()
@@ -349,6 +353,43 @@ object AppTargetDetector {
             appName = best.appName,
             matchedText = best.normalizedCandidate,
         )
+    }
+
+    private fun detectHardcodedApp(
+        normalizedGoal: String,
+        installedAppNames: List<String>,
+    ): TargetAppDetection? {
+        if (containsWholeWord(normalizedGoal, "temu")) {
+            return TargetAppDetection(
+                appName = resolveHardcodedAppName(
+                    installedAppNames = installedAppNames,
+                    preferredNames = listOf(TEMU_APP_NAME),
+                    fallbackName = TEMU_APP_NAME,
+                ),
+                matchedText = "temu",
+            )
+        }
+
+        val matchedMapsText = when {
+            containsExactPhrase(normalizedGoal, "google maps") -> "google maps"
+            containsExactPhrase(normalizedGoal, "google map") -> "google map"
+            containsWholeWord(normalizedGoal, "navigate") &&
+                (containsWholeWord(normalizedGoal, "maps") || containsWholeWord(normalizedGoal, "map")) -> "navigate maps"
+            else -> null
+        }
+
+        if (matchedMapsText != null) {
+            return TargetAppDetection(
+                appName = resolveHardcodedAppName(
+                    installedAppNames = installedAppNames,
+                    preferredNames = listOf(GOOGLE_MAPS_APP_NAME, MAPS_APP_NAME),
+                    fallbackName = MAPS_APP_NAME,
+                ),
+                matchedText = matchedMapsText,
+            )
+        }
+
+        return null
     }
 
     private fun candidatesForAppName(appName: String): Set<String> {
@@ -403,6 +444,26 @@ object AppTargetDetector {
 
     private fun containsExactPhrase(normalizedGoal: String, normalizedCandidate: String): Boolean {
         return " $normalizedGoal ".contains(" $normalizedCandidate ")
+    }
+
+    private fun containsWholeWord(normalizedGoal: String, word: String): Boolean {
+        return containsExactPhrase(normalizedGoal, normalizePhrase(word))
+    }
+
+    private fun resolveHardcodedAppName(
+        installedAppNames: List<String>,
+        preferredNames: List<String>,
+        fallbackName: String,
+    ): String {
+        val normalizedInstalled = installedAppNames
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        for (preferredName in preferredNames) {
+            val normalizedPreferred = normalizePhrase(preferredName)
+            normalizedInstalled.firstOrNull { normalizePhrase(it) == normalizedPreferred }?.let { return it }
+            normalizedInstalled.firstOrNull { normalizePhrase(it).startsWith(normalizedPreferred) }?.let { return it }
+        }
+        return fallbackName
     }
 
     private fun tokenize(value: String): List<String> {
