@@ -8,6 +8,12 @@ data class TargetAppDetection(
 object AppTargetDetector {
     private const val MIN_MATCH_CHARS = 4
     private const val TEMU_APP_NAME = "Temu"
+    private const val PLAY_STORE_APP_NAME = "Play Store"
+    private const val GOOGLE_PLAY_STORE_APP_NAME = "Google Play Store"
+    private const val GALLERY_APP_NAME = "Gallery"
+    private const val SAMSUNG_GALLERY_APP_NAME = "Samsung Gallery"
+    private const val GOOGLE_PHOTOS_APP_NAME = "Google Photos"
+    private const val PHOTOS_APP_NAME = "Photos"
     private const val MAPS_APP_NAME = "Maps"
     private const val GOOGLE_MAPS_APP_NAME = "Google Maps"
 
@@ -367,6 +373,78 @@ object AppTargetDetector {
                     fallbackName = TEMU_APP_NAME,
                 ),
                 matchedText = "temu",
+            )
+        }
+
+        val matchedPlayStoreText = when {
+            containsExactPhrase(normalizedGoal, "google play store") -> "google play store"
+            containsExactPhrase(normalizedGoal, "play store") -> "play store"
+            containsExactPhrase(normalizedGoal, "google play") -> "google play"
+            containsExactPhrase(normalizedGoal, "googleplaystore") -> "googleplaystore"
+            containsExactPhrase(normalizedGoal, "playstore") -> "playstore"
+            else -> null
+        }
+
+        if (matchedPlayStoreText != null) {
+            return TargetAppDetection(
+                appName = resolveHardcodedAppName(
+                    installedAppNames = installedAppNames,
+                    preferredNames = listOf(PLAY_STORE_APP_NAME, GOOGLE_PLAY_STORE_APP_NAME),
+                    fallbackName = PLAY_STORE_APP_NAME,
+                ),
+                matchedText = matchedPlayStoreText,
+            )
+        }
+
+        val matchedGalleryText = when {
+            containsExactPhrase(normalizedGoal, "samsung gallery") -> "samsung gallery"
+            containsExactPhrase(normalizedGoal, "google photos") -> "google photos"
+            containsExactPhrase(normalizedGoal, "samsunggallery") -> "samsunggallery"
+            containsExactPhrase(normalizedGoal, "googlephotos") -> "googlephotos"
+            containsExactPhrase(normalizedGoal, "photos app") -> "photos app"
+            containsExactPhrase(normalizedGoal, "gallery app") -> "gallery app"
+            containsExactPhrase(normalizedGoal, "photo gallery") -> "photo gallery"
+            containsWholeWord(normalizedGoal, "gallery") -> "gallery"
+            else -> null
+        }
+
+        if (matchedGalleryText != null) {
+            val preferredNames = when (matchedGalleryText) {
+                "samsung gallery", "samsunggallery" -> listOf(
+                    SAMSUNG_GALLERY_APP_NAME,
+                    GALLERY_APP_NAME,
+                    GOOGLE_PHOTOS_APP_NAME,
+                    PHOTOS_APP_NAME,
+                )
+
+                "google photos", "googlephotos", "photos app" -> listOf(
+                    GOOGLE_PHOTOS_APP_NAME,
+                    PHOTOS_APP_NAME,
+                    GALLERY_APP_NAME,
+                    SAMSUNG_GALLERY_APP_NAME,
+                )
+
+                else -> listOf(
+                    GALLERY_APP_NAME,
+                    SAMSUNG_GALLERY_APP_NAME,
+                    GOOGLE_PHOTOS_APP_NAME,
+                    PHOTOS_APP_NAME,
+                )
+            }
+
+            val fallbackName = when (matchedGalleryText) {
+                "samsung gallery", "samsunggallery" -> SAMSUNG_GALLERY_APP_NAME
+                "google photos", "googlephotos", "photos app" -> GOOGLE_PHOTOS_APP_NAME
+                else -> GALLERY_APP_NAME
+            }
+
+            return TargetAppDetection(
+                appName = resolveHardcodedAppName(
+                    installedAppNames = installedAppNames,
+                    preferredNames = preferredNames,
+                    fallbackName = fallbackName,
+                ),
+                matchedText = matchedGalleryText,
             )
         }
 

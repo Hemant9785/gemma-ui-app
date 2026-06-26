@@ -111,11 +111,15 @@ class PromptInjectionManager(context: Context) {
 
             AppWorkflow.HOTSTAR -> """
                 APP WORKFLOW - Hotstar (follow exactly):
-
+                Use wait action if app is loading, dont click back,home navigation button just use wait
                 FINDING SEARCH:
                 1. Tap the magnifying-glass Search icon in the bottom navigation bar.
                 2. Wait for the search input field to appear.
                 3. Tap the visible search input field, then type the requested query. Enter is pressed automatically after typing.
+
+                STOP RULE:
+                - After the search results appear, immediately output done=true.
+                - Do not open any result after search unless the goal explicitly asks to open or play something.
             """.trimIndent()
 
             AppWorkflow.GOOGLE_MAPS -> """
@@ -171,24 +175,25 @@ class PromptInjectionManager(context: Context) {
 
                 SEARCHING / INSTALLING APPS:
                 1. Inspect the current screenshot first. Do not assume a search field exists at the top of the screen.
-                2. If an editable search field such as "Search apps & games" is visibly present, use type_text with that field's exact bounding box.
+                2. Magnifying glass for search is at bottom navigation bar between Apps and Books section.
                 3. If no editable search field is visible but a Search tab or magnifying-glass icon is visible in the bottom navigation, tap that bottom Search control first.
                 4. After the search screen opens, use type_text only when the editable search field is actually visible. Enter is pressed automatically after typing.
                 5. Choose the exact app result by checking app name, icon, developer/publisher, rating, and category.
-                6. If the exact result is not visible, scroll down and keep comparing names, icons, and developers.
+                6. Never open Sponsored, Ad, or Promoted apps/products. Prefer the organic exact app match only.
+                7. If the exact result is not visible, scroll down and keep comparing names, icons, and developers.
                 - Never click or type into a top-screen area merely because a search field is expected there.
 
                 INSTALL / OPEN / UPDATE:
-                - To install: open the exact app detail page, then tap Install.
-                - To open an installed app: tap Open only after confirming the app detail page is the requested app.
-                - To update: tap Update only for the requested installed app.
+                - To install: open the exact app detail page, then tap Install. Immediately output done=true after tapping Install. Do not wait for progress and do not tap anything else.
+                - To open an installed app: tap Open only after confirming the app detail page is the requested app. Immediately output done=true after tapping Open.
+                - To update: tap Update only for the requested installed app. Immediately output done=true after tapping Update.
                 - If a permission/account/payment prompt appears, do not proceed unless the goal explicitly asks for that step.
 
                 SEARCHING GAMES / APPS BY CATEGORY:
                 - For broad goals like "download a puzzle game", compare visible app names, icons, ratings, and categories before choosing.
                 - Prefer organic exact matches over sponsored placements.
 
-                STOP RULE: For a search goal, stop when the requested search results are visible. For an app-detail goal, stop when the exact app detail page is open. For Install/Open/Update goals, stop after the requested action has been triggered and is visibly confirmed.
+                STOP RULE: For a search goal, stop when the requested search results are visible. For an app-detail goal, stop when the exact app detail page is open. For Install/Open/Update goals, output done=true immediately after tapping the requested button.
             """.trimIndent()
         }
 

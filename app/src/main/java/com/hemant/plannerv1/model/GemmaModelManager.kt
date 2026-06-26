@@ -211,6 +211,7 @@ class GemmaModelManager(
     "Prefer high-level actions over visual clicks.\n" +
     "Never repeat a failed action.\n" +
     "Do not click back, home button when app is loading. correct action is wait in such cases" + 
+    "For popups most of time cancel button is at top right of popup overlay" + 
     "Return only the required JSON object."
 ),
             samplerConfig = SamplerConfig(
